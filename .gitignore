@@ -28,7 +28,7 @@ pb_extracted/
 qamar_27-10/
 New Folder/
 *.xlsx
-*.json
+Owner_*.json
 
 # Visual Studio / IDE
 .vs/
