@@ -1,0 +1,573 @@
+:root {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Color Palette - Premium Modern Obsidian / Indigo Theme */
+  --bg-primary: #0a0d14;
+  --bg-secondary: #0f1523;
+  --bg-surface: #141c2e;
+  --bg-surface-hover: #1c273e;
+  --bg-surface-active: #22304d;
+  --bg-glass: rgba(20, 28, 46, 0.75);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.16);
+  --border-focus: #6366f1;
+
+  /* Accent Colors */
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #4f46e5;
+  --accent-primary-light: rgba(99, 102, 241, 0.15);
+  --accent-glow: rgba(99, 102, 241, 0.35);
+
+  --accent-emerald: #10b981;
+  --accent-emerald-light: rgba(16, 185, 129, 0.15);
+  --accent-amber: #f59e0b;
+  --accent-amber-light: rgba(245, 158, 11, 0.15);
+  --accent-rose: #f43f5e;
+  --accent-rose-light: rgba(244, 63, 94, 0.15);
+  --accent-cyan: #06b6d4;
+  --accent-cyan-light: rgba(6, 182, 212, 0.15);
+
+  /* Typography Colors */
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --text-inverse: #0f172a;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.25);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Foreign Branch Styling (Branch 5) - Dark Mode */
+  --bg-foreign-row: rgba(30, 64, 175, 0.42);
+  --bg-foreign-row-hover: rgba(30, 64, 175, 0.60);
+  --border-foreign: #3b82f6;
+  --text-foreign-badge: #93c5fd;
+  --bg-foreign-badge: rgba(59, 130, 246, 0.25);
+
+  /* To Be Discussed Row Styling - Dark Mode */
+  --bg-discuss-row: rgba(239, 68, 68, 0.22);
+  --bg-discuss-row-hover: rgba(239, 68, 68, 0.32);
+  --border-discuss-row: #dc2626;
+  --text-discuss-row: #fecaca;
+
+  /* Excel View Styling Variables (Dark Theme) */
+  --excel-cell-font-size: 15px;
+  --excel-header-font-size: 14px;
+  --excel-cost-color: var(--text-main);
+  --excel-agreed-color: #4ade80;
+  --excel-actual-color: #f87171;
+  --excel-proj-color: #f87171;
+  --excel-non-servicenow-color: #f87171;
+}
+
+/* ─── Light Theme ─────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-primary: #f0f2f8;
+  --bg-secondary: #ffffff;
+  --bg-surface: #e8eaf2;
+  --bg-surface-hover: #dde0ee;
+  --bg-surface-active: #d0d4e8;
+  --bg-glass: rgba(255, 255, 255, 0.80);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.15);
+  --border-focus: #6366f1;
+
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #4f46e5;
+  --accent-primary-light: rgba(99, 102, 241, 0.12);
+  --accent-glow: rgba(99, 102, 241, 0.25);
+
+  --accent-emerald: #059669;
+  --accent-emerald-light: rgba(5, 150, 105, 0.12);
+  --accent-amber: #d97706;
+  --accent-amber-light: rgba(217, 119, 6, 0.12);
+  --accent-rose: #e11d48;
+  --accent-rose-light: rgba(225, 29, 72, 0.10);
+  --accent-cyan: #0891b2;
+  --accent-cyan-light: rgba(8, 145, 178, 0.12);
+
+  --text-main: #1e2235;
+  --text-muted: #4b5470;
+  --text-subtle: #7a819e;
+  --text-inverse: #f8fafc;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.15);
+  --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.18);
+
+  /* Foreign Branch Styling (Branch 5) - Light Mode */
+  --bg-foreign-row: #c2dbfe;
+  --bg-foreign-row-hover: #b0d1fd;
+  --border-foreign: #1d4ed8;
+  --text-foreign-badge: #1e40af;
+  --bg-foreign-badge: rgba(29, 78, 216, 0.15);
+
+  /* To Be Discussed Row Styling - Light Mode */
+  --bg-discuss-row: #fee2e2;
+  --bg-discuss-row-hover: #fecaca;
+  --border-discuss-row: #dc2626;
+  --text-discuss-row: #991b1b;
+
+  /* Excel View Styling Variables (Light Theme) */
+  --excel-cost-color: #000000;
+  --excel-agreed-color: #047857;
+  --excel-actual-color: #991b1b;
+  --excel-proj-color: #991b1b;
+  --excel-non-servicenow-color: #991b1b;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition: background-color var(--transition-normal),
+              border-color var(--transition-normal),
+              color var(--transition-normal),
+              box-shadow var(--transition-normal);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  background-image: 
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(6, 182, 212, 0.08) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.07) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(6, 182, 212, 0.05) 0%, transparent 60%);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: #27354f;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #394d73;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #b8bdd4;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #9098b8;
+}
+
+/* Base Form Elements */
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: 0.925rem;
+}
+
+input, select, textarea {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-primary-light);
+}
+
+button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  border: none;
+  transition: all var(--transition-fast);
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  box-shadow: var(--shadow-sm), 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  box-shadow: var(--shadow-md), 0 0 15px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-medium);
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--bg-surface-hover);
+  border-color: var(--border-focus);
+}
+
+.btn-danger {
+  background-color: var(--accent-rose-light);
+  color: var(--accent-rose);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--accent-rose);
+  color: #fff;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+}
+.btn-success:hover:not(:disabled) {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Cards & Containers */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.panel-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+.panel-card:hover {
+  border-color: var(--border-medium);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge-posted {
+  background-color: var(--accent-emerald-light);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.badge-pending {
+  background-color: var(--accent-amber-light);
+  color: var(--accent-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.badge-info {
+  background-color: var(--accent-cyan-light);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+/* Data Table Styles */
+.data-table-container {
+  overflow-x: auto;
+  max-height: 72vh;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.data-table {
+  width: 100%;
+  min-width: 1700px;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--bg-surface);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.data-table .sticky-col-1 {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  min-width: 75px;
+  width: 75px;
+}
+
+.data-table thead th.sticky-col-1 {
+  z-index: 20;
+  background-color: var(--bg-surface);
+}
+
+.data-table .sticky-col-2 {
+  position: sticky;
+  left: 75px;
+  z-index: 2;
+  background-color: var(--bg-secondary);
+  border-right: 2px solid var(--border-medium);
+  min-width: 140px;
+  width: 140px;
+}
+
+.data-table thead th.sticky-col-2 {
+  z-index: 20;
+  background-color: var(--bg-surface);
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+.data-table tbody tr:hover td {
+  background-color: var(--bg-surface-hover);
+}
+
+/* Foreign Branch (Branch 5) Highlight Utilities */
+.foreign-row,
+tr.foreign-row {
+  background-color: var(--bg-foreign-row) !important;
+}
+
+.data-table tbody tr.foreign-row:hover td,
+.compact-table tbody tr.foreign-row:hover td,
+tr.foreign-row:hover td,
+.foreign-row:hover {
+  background-color: var(--bg-foreign-row-hover) !important;
+}
+
+.foreign-cell-indicator {
+  border-left: 3px solid var(--border-foreign) !important;
+}
+
+/* To Be Discussed Highlight Utilities (Priority > Foreign Row) */
+.discuss-row,
+tr.discuss-row {
+  background-color: var(--bg-discuss-row) !important;
+  color: var(--text-discuss-row);
+}
+
+.data-table tbody tr.discuss-row:hover td,
+.compact-table tbody tr.discuss-row:hover td,
+tr.discuss-row:hover td,
+.discuss-row:hover {
+  background-color: var(--bg-discuss-row-hover) !important;
+}
+
+.discuss-cell-indicator {
+  border-left: 3px solid var(--border-discuss-row) !important;
+}
+
+.badge-foreign {
+  background-color: var(--bg-foreign-badge);
+  color: var(--text-foreign-badge);
+  border: 1px solid var(--border-foreign);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.num-cell {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.6); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Ultra-Compact Shared Layout Utilities (Excel View & Related Tabs) ─── */
+.compact-tab-btn {
+  height: 28px !important;
+  padding: 0.15rem 0.55rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  border-radius: var(--radius-sm) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.compact-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  padding: 0.2rem 0.5rem !important;
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-sm) !important;
+  min-height: 30px !important;
+  box-sizing: border-box !important;
+  flex-wrap: wrap !important;
+}
+
+.compact-kpi-strip {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  padding: 0.25rem 0.65rem !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-sm) !important;
+  height: 34px !important;
+  font-size: 0.82rem !important;
+  overflow-x: auto !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+}
+
+.compact-table-container {
+  overflow: auto !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-sm) !important;
+  background: var(--bg-secondary) !important;
+}
+
+.compact-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: var(--excel-cell-font-size, 15px) !important;
+  line-height: 1.3 !important;
+  border-spacing: 0 !important;
+}
+
+.compact-table th {
+  position: sticky !important;
+  top: 0;
+  z-index: 10;
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  padding: 0.4rem 0.5rem !important;
+  font-weight: 700 !important;
+  font-size: var(--excel-header-font-size, 14px) !important;
+  border: 1px solid #334155 !important;
+  white-space: nowrap !important;
+  box-shadow: 0 1px 0 var(--border-medium) !important;
+}
+
+.compact-table tr.summary-header-row th {
+  top: 0 !important;
+  z-index: 12 !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-main) !important;
+  border-bottom: 2px solid var(--border-medium) !important;
+  box-sizing: border-box !important;
+}
+
+.compact-table thead tr.column-header-row th {
+  top: 56px !important;
+  z-index: 11 !important;
+}
+
+.compact-table thead tr.column-header-row.solo th {
+  top: 0 !important;
+  z-index: 10 !important;
+}
+
+.compact-table td {
+  padding: 4px 6px !important;
+  border: 1px solid var(--border-subtle) !important;
+  font-size: var(--excel-cell-font-size, 15px) !important;
+  height: 28px !important;
+  box-sizing: border-box !important;
+}

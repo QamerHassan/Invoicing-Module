@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{65913CAA-2D63-4F55-A30A-D618EF05C701}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RizvizInvoicing.Domain", "src\RizvizInvoicing.Domain\RizvizInvoicing.Domain.csproj", "{F68DAA0B-368F-41A9-81AB-03E332BE1F78}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RizvizInvoicing.Application", "src\RizvizInvoicing.Application\RizvizInvoicing.Application.csproj", "{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RizvizInvoicing.Infrastructure", "src\RizvizInvoicing.Infrastructure\RizvizInvoicing.Infrastructure.csproj", "{872E5D4C-EB9B-4805-8CC5-296014031AC8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RizvizInvoicing.Api", "src\RizvizInvoicing.Api\RizvizInvoicing.Api.csproj", "{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{C6661B1B-AB35-462D-A97C-190E868AE4C7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RizvizInvoicing.Tests", "tests\RizvizInvoicing.Tests\RizvizInvoicing.Tests.csproj", "{F1C2B960-7019-477F-82B5-5435703C46A7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F68DAA0B-368F-41A9-81AB-03E332BE1F78}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F68DAA0B-368F-41A9-81AB-03E332BE1F78}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F68DAA0B-368F-41A9-81AB-03E332BE1F78}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F68DAA0B-368F-41A9-81AB-03E332BE1F78}.Release|Any CPU.Build.0 = Release|Any CPU
+		{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{872E5D4C-EB9B-4805-8CC5-296014031AC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{872E5D4C-EB9B-4805-8CC5-296014031AC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{872E5D4C-EB9B-4805-8CC5-296014031AC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{872E5D4C-EB9B-4805-8CC5-296014031AC8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1C2B960-7019-477F-82B5-5435703C46A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1C2B960-7019-477F-82B5-5435703C46A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1C2B960-7019-477F-82B5-5435703C46A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1C2B960-7019-477F-82B5-5435703C46A7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F68DAA0B-368F-41A9-81AB-03E332BE1F78} = {65913CAA-2D63-4F55-A30A-D618EF05C701}
+		{016DA9D5-F0A7-4B92-ACC4-AA3627D4DBE4} = {65913CAA-2D63-4F55-A30A-D618EF05C701}
+		{872E5D4C-EB9B-4805-8CC5-296014031AC8} = {65913CAA-2D63-4F55-A30A-D618EF05C701}
+		{CA21A91D-F8EB-423A-B6E0-DD58ED48FF65} = {65913CAA-2D63-4F55-A30A-D618EF05C701}
+		{F1C2B960-7019-477F-82B5-5435703C46A7} = {C6661B1B-AB35-462D-A97C-190E868AE4C7}
+	EndGlobalSection
+EndGlobal

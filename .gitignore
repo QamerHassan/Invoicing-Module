@@ -1,0 +1,51 @@
+# Build results
+bin/
+obj/
+dist/
+node_modules/
+
+# Environment and sensitive secrets
+.env
+.env.*
+appsettings.Development.json
+appsettings.*.local.json
+secrets.json
+
+# Database Backups & Large files
+*.bak
+backup*
+*.mdf
+*.ldf
+
+# Reference & Scratch files
+scratch/
+scratch_*
+prompt_*.txt
+uf_*.txt
+*.srd
+extracted_dw/
+pb_extracted/
+qamar_27-10/
+New Folder/
+*.xlsx
+*.json
+
+# Visual Studio / IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+logs/
+*.log
+
+# OS generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
