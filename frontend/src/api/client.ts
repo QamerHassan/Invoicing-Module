@@ -33,15 +33,11 @@ import type {
 
 // In production, VITE_API_BASE_URL must be set in Vercel Environment Variables.
 // In development, falls back to localhost:5290.
-// Never hardcode the Back4App URL here — it changes with every deployment.
+// Update VITE_API_BASE_URL in Vercel dashboard whenever Back4App URL changes.
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5290' : '')
+  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://invoicingmodule-82k8xpio.back4.app')
 ).replace(/\/$/, '');
-
-if (!BASE_URL && !import.meta.env.DEV) {
-  console.error('[API] VITE_API_BASE_URL is not set! Set it in Vercel Environment Variables.');
-}
 
 function getAuthHeader(): Record<string, string> {
   const token = localStorage.getItem('token');
