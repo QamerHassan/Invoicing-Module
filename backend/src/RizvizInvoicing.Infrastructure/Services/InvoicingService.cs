@@ -39,6 +39,48 @@ public class InvoicingService : IInvoicingService
         return cmd;
     }
 
+    // ── Static In-Memory Cache for Lookups (Eliminates RDS latency) ───────────
+    private static DateTime _cacheExpiry = DateTime.MinValue;
+    private static Dictionary<int, string>? _cachedVendors;
+    private static Dictionary<int, string>? _cachedProfiles;
+    private static Dictionary<int, string>? _cachedProjects;
+    private static Dictionary<int, int>? _cachedBranches;
+    private static Dictionary<int, string>? _cachedProjectStacks;
+    private static Dictionary<int, string>? _cachedChargibility;
+    private static Dictionary<decimal, string>? _cachedEntities;
+    private static Dictionary<decimal, string>? _cachedEntityStacks;
+    private static Dictionary<string, string>? _cachedServiceHeads;
+    private static readonly SemaphoreSlim _cacheLock = new SemaphoreSlim(1, 1);
+
+    private async Task EnsureLookupsCachedAsync(CancellationToken ct)
+    {
+        if (_cacheExpiry > DateTime.UtcNow && _cachedVendors != null)
+            return;
+
+        await _cacheLock.WaitAsync(ct);
+        try
+        {
+            if (_cacheExpiry > DateTime.UtcNow && _cachedVendors != null)
+                return;
+
+            _cachedVendors       = await GetVendorNamesAsync(ct);
+            _cachedProfiles      = await GetProfileOwnerNamesAsync(ct);
+            _cachedProjects      = await GetProjectNamesAsync(ct);
+            _cachedBranches      = await GetProjectBranchesAsync(ct);
+            _cachedProjectStacks = await GetProjectStacksAsync(ct);
+            _cachedChargibility  = await GetChargibilityNamesAsync(ct);
+            _cachedEntities      = await GetEntityNamesAsync(ct);
+            _cachedEntityStacks  = await GetEntityStacksAsync(ct);
+            _cachedServiceHeads  = await GetServiceHeadNamesAsync(ct);
+
+            _cacheExpiry = DateTime.UtcNow.AddMinutes(15);
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
     // ── Lookups ─────────────────────────────────────────────────────────────
 
     private async Task<Dictionary<int, string>> GetVendorNamesAsync(CancellationToken ct)
@@ -180,29 +222,18 @@ public class InvoicingService : IInvoicingService
     {
         var cleanMonth = (monthYear ?? string.Empty).Trim().Replace("-", "").ToUpperInvariant();
 
-        // Run all lookups in parallel
-        var vendorsTask         = GetVendorNamesAsync(ct);
-        var profilesTask        = GetProfileOwnerNamesAsync(ct);
-        var projectsTask        = GetProjectNamesAsync(ct);
-        var entitiesTask        = GetEntityNamesAsync(ct);
-        var stacksTask          = GetEntityStacksAsync(ct);
-        var projectStacksTask   = GetProjectStacksAsync(ct);
-        var serviceHeadsTask    = GetServiceHeadNamesAsync(ct);
-        var chargibilitiesTask  = GetChargibilityNamesAsync(ct);
-        var projectBranchesTask = GetProjectBranchesAsync(ct);
+        // Ensure lookups are cached in memory (0ms on cache hit)
+        await EnsureLookupsCachedAsync(ct);
 
-        await Task.WhenAll(vendorsTask, profilesTask, projectsTask, entitiesTask,
-            stacksTask, projectStacksTask, serviceHeadsTask, chargibilitiesTask, projectBranchesTask);
-
-        var vendors         = await vendorsTask;
-        var profiles        = await profilesTask;
-        var projects        = await projectsTask;
-        var entities        = await entitiesTask;
-        var stacks          = await stacksTask;
-        var projectStacks   = await projectStacksTask;
-        var serviceHeads    = await serviceHeadsTask;
-        var chargibilities  = await chargibilitiesTask;
-        var projectBranches = await projectBranchesTask;
+        var vendors         = _cachedVendors ?? new();
+        var profiles        = _cachedProfiles ?? new();
+        var projects        = _cachedProjects ?? new();
+        var entities        = _cachedEntities ?? new();
+        var stacks          = _cachedEntityStacks ?? new();
+        var projectStacks   = _cachedProjectStacks ?? new();
+        var serviceHeads    = _cachedServiceHeads ?? new();
+        var chargibilities  = _cachedChargibility ?? new();
+        var projectBranches = _cachedBranches ?? new();
 
         var rows = await _context.CompanyInvoices.AsNoTracking()
             .Where(c => c.InvoiceMonth != null && c.InvoiceMonth.Trim().Replace("-", "") == cleanMonth)
@@ -1299,12 +1330,13 @@ public class InvoicingService : IInvoicingService
             ? month.Trim().Replace("-", "").ToUpperInvariant()
             : (availableMonths.FirstOrDefault() ?? "OCT26");
 
-        // ── PARALLEL lookup calls (saves 4-5 round trips) ────────────────────
-        var vendorsTask          = GetVendorNamesAsync(ct);
-        var profilesTask         = GetProfileOwnerNamesAsync(ct);
-        var projectsTask         = GetProjectNamesAsync(ct);
-        var entitiesTask         = GetEntityNamesAsync(ct);
-        var projectBranchesTask  = GetProjectBranchesAsync(ct);
+        // Ensure lookups are cached in memory (0ms on cache hit)
+        await EnsureLookupsCachedAsync(ct);
+        var vendors         = _cachedVendors ?? new();
+        var profiles        = _cachedProfiles ?? new();
+        var projects        = _cachedProjects ?? new();
+        var entities        = _cachedEntities ?? new();
+        var projectBranches = _cachedBranches ?? new();
 
         // ── Raw-SQL grouping instead of EF GroupBy (much faster on RDS) ──────
         var conn = _context.Database.GetDbConnection();
@@ -1343,13 +1375,6 @@ public class InvoicingService : IInvoicingService
         var finals   = await _context.FinalInvoices.AsNoTracking()
             .OrderByDescending(f => f.MonthYear).Take(12).ToListAsync(ct);
         var advances = await _context.InvoiceAdvanceFunds.AsNoTracking().ToListAsync(ct);
-
-        await Task.WhenAll(vendorsTask, profilesTask, projectsTask, entitiesTask, projectBranchesTask);
-        var vendors         = await vendorsTask;
-        var profiles        = await profilesTask;
-        var projects        = await projectsTask;
-        var entities        = await entitiesTask;
-        var projectBranches = await projectBranchesTask;
 
         var cmpMonthMap = cmpByMonth.ToDictionary(x => x.MonthYear.Replace("-","").ToUpper());
 
