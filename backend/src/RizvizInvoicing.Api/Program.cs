@@ -211,6 +211,9 @@ try
     // 1. Map Controllers
     app.MapControllers();
 
+    // Root endpoint for platform health checks (Back4App, Render, etc.)
+    app.MapGet("/", () => Results.Ok(new { status = "healthy", app = "Rizviz Invoicing API" })).AllowAnonymous();
+
     // Health check endpoint with real DB connectivity and name
     app.MapGet("/health", (InvoicingDbContext db) =>
     {
