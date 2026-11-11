@@ -31,7 +31,7 @@ import type {
   UserEmailSettingsDto
 } from '../types';
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://invoicingmodule-9pfo6bak.back4.app').replace(/\/$/, '');
 
 function getAuthHeader(): Record<string, string> {
   const token = localStorage.getItem('token');
