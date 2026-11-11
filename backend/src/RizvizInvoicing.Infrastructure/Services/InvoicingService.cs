@@ -180,15 +180,29 @@ public class InvoicingService : IInvoicingService
     {
         var cleanMonth = (monthYear ?? string.Empty).Trim().Replace("-", "").ToUpperInvariant();
 
-        var vendors         = await GetVendorNamesAsync(ct);
-        var profiles        = await GetProfileOwnerNamesAsync(ct);
-        var projects        = await GetProjectNamesAsync(ct);
-        var entities        = await GetEntityNamesAsync(ct);
-        var stacks          = await GetEntityStacksAsync(ct);
-        var projectStacks   = await GetProjectStacksAsync(ct);
-        var serviceHeads    = await GetServiceHeadNamesAsync(ct);
-        var chargibilities  = await GetChargibilityNamesAsync(ct);
-        var projectBranches = await GetProjectBranchesAsync(ct);
+        // Run all lookups in parallel
+        var vendorsTask         = GetVendorNamesAsync(ct);
+        var profilesTask        = GetProfileOwnerNamesAsync(ct);
+        var projectsTask        = GetProjectNamesAsync(ct);
+        var entitiesTask        = GetEntityNamesAsync(ct);
+        var stacksTask          = GetEntityStacksAsync(ct);
+        var projectStacksTask   = GetProjectStacksAsync(ct);
+        var serviceHeadsTask    = GetServiceHeadNamesAsync(ct);
+        var chargibilitiesTask  = GetChargibilityNamesAsync(ct);
+        var projectBranchesTask = GetProjectBranchesAsync(ct);
+
+        await Task.WhenAll(vendorsTask, profilesTask, projectsTask, entitiesTask,
+            stacksTask, projectStacksTask, serviceHeadsTask, chargibilitiesTask, projectBranchesTask);
+
+        var vendors         = await vendorsTask;
+        var profiles        = await profilesTask;
+        var projects        = await projectsTask;
+        var entities        = await entitiesTask;
+        var stacks          = await stacksTask;
+        var projectStacks   = await projectStacksTask;
+        var serviceHeads    = await serviceHeadsTask;
+        var chargibilities  = await chargibilitiesTask;
+        var projectBranches = await projectBranchesTask;
 
         var rows = await _context.CompanyInvoices.AsNoTracking()
             .Where(c => c.InvoiceMonth != null && c.InvoiceMonth.Trim().Replace("-", "") == cleanMonth)
@@ -1285,110 +1299,122 @@ public class InvoicingService : IInvoicingService
             ? month.Trim().Replace("-", "").ToUpperInvariant()
             : (availableMonths.FirstOrDefault() ?? "OCT26");
 
-        var vendors  = await GetVendorNamesAsync(ct);
-        var profiles = await GetProfileOwnerNamesAsync(ct);
-        var projects = await GetProjectNamesAsync(ct);
-        var entities = await GetEntityNamesAsync(ct);
-        var projectBranches = await GetProjectBranchesAsync(ct);
+        // ── PARALLEL lookup calls (saves 4-5 round trips) ────────────────────
+        var vendorsTask          = GetVendorNamesAsync(ct);
+        var profilesTask         = GetProfileOwnerNamesAsync(ct);
+        var projectsTask         = GetProjectNamesAsync(ct);
+        var entitiesTask         = GetEntityNamesAsync(ct);
+        var projectBranchesTask  = GetProjectBranchesAsync(ct);
 
-        // Monthly trends (last 12 months of final invoices)
-        var finals = await _context.FinalInvoices.AsNoTracking()
-            .OrderByDescending(f => f.MonthYear)
-            .Take(12)
-            .ToListAsync(ct);
+        // ── Raw-SQL grouping instead of EF GroupBy (much faster on RDS) ──────
+        var conn = _context.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
 
-        var advances = await _context.InvoiceAdvanceFunds.AsNoTracking()
-            .ToListAsync(ct);
-
-        // Selected month company invoices stats
-        var monthInvoicesQuery = _context.CompanyInvoices.AsNoTracking()
-            .Where(c => c.InvoiceMonth != null && c.InvoiceMonth.Replace("-", "").ToUpper() == cleanMonth);
-
-        var totalUsdCharged    = await monthInvoicesQuery.SumAsync(c => c.ChargedAmtUsd ?? 0m, ct);
-        var totalPkrIncome     = await monthInvoicesQuery.SumAsync(c => c.TotalIncomePkr ?? 0m, ct);
-        var activeInvoiceCount = await monthInvoicesQuery.CountAsync(ct);
-
-        // Fallback if no company invoices in selected month, get overall or 0
-        if (activeInvoiceCount == 0 && string.IsNullOrWhiteSpace(month))
+        // Monthly summary from company_invoicing
+        var cmpByMonth = new List<(string MonthYear, int InvoiceCount, decimal TotalChargedUsd, decimal TotalIncomePkr)>();
+        using (var cmd = conn.CreateCommand())
         {
-            totalUsdCharged    = await _context.CompanyInvoices.SumAsync(c => c.ChargedAmtUsd ?? 0m, ct);
-            totalPkrIncome     = await _context.CompanyInvoices.SumAsync(c => c.TotalIncomePkr ?? 0m, ct);
-            activeInvoiceCount = await _context.CompanyInvoices.CountAsync(ct);
+            cmd.CommandTimeout = 30;
+            cmd.CommandText = @"
+                SELECT ISNULL(invoice_month,''), COUNT(*), 
+                       SUM(ISNULL(charged_amt_usd,0)), SUM(ISNULL(total_income_pkr,0))
+                FROM dbo.company_invoicing
+                GROUP BY invoice_month";
+            using var rdr = await cmd.ExecuteReaderAsync(ct);
+            while (await rdr.ReadAsync(ct))
+                cmpByMonth.Add((rdr.GetString(0).Trim(), rdr.GetInt32(1), rdr.GetDecimal(2), rdr.GetDecimal(3)));
         }
 
-        // Group company invoices by month for trends
-        var cmpByMonth = await _context.CompanyInvoices.AsNoTracking()
-            .GroupBy(c => c.InvoiceMonth)
-            .Select(g => new
-            {
-                MonthYear       = g.Key,
-                InvoiceCount    = g.Count(),
-                TotalChargedUsd = g.Sum(c => c.ChargedAmtUsd ?? 0m),
-                TotalIncomePkr  = g.Sum(c => c.TotalIncomePkr ?? 0m)
-            })
-            .ToListAsync(ct);
-        var cmpMonthMap = cmpByMonth.ToDictionary(x => x.MonthYear.Trim());
+        // Stats for selected month
+        var monthRow = cmpByMonth.FirstOrDefault(r => r.MonthYear.Replace("-","").ToUpper() == cleanMonth);
+        var totalUsdCharged    = monthRow.TotalChargedUsd;
+        var totalPkrIncome     = monthRow.TotalIncomePkr;
+        var activeInvoiceCount = monthRow.InvoiceCount;
+
+        // Fallback: use all invoices if selected month has 0
+        if (activeInvoiceCount == 0 && string.IsNullOrWhiteSpace(month))
+        {
+            totalUsdCharged    = cmpByMonth.Sum(r => r.TotalChargedUsd);
+            totalPkrIncome     = cmpByMonth.Sum(r => r.TotalIncomePkr);
+            activeInvoiceCount = cmpByMonth.Sum(r => r.InvoiceCount);
+        }
+
+        // Final invoices & advances (small tables — fast)
+        var finals   = await _context.FinalInvoices.AsNoTracking()
+            .OrderByDescending(f => f.MonthYear).Take(12).ToListAsync(ct);
+        var advances = await _context.InvoiceAdvanceFunds.AsNoTracking().ToListAsync(ct);
+
+        await Task.WhenAll(vendorsTask, profilesTask, projectsTask, entitiesTask, projectBranchesTask);
+        var vendors         = await vendorsTask;
+        var profiles        = await profilesTask;
+        var projects        = await projectsTask;
+        var entities        = await entitiesTask;
+        var projectBranches = await projectBranchesTask;
+
+        var cmpMonthMap = cmpByMonth.ToDictionary(x => x.MonthYear.Replace("-","").ToUpper());
 
         var trends = finals.Select(f =>
         {
-            var mKey = f.MonthYear.Trim();
-            var advAmt = advances.Where(a => a.MonthYear.Trim() == mKey).Sum(a => a.Amount ?? 0m);
+            var mKey = f.MonthYear.Trim().Replace("-","").ToUpper();
+            var advAmt = advances.Where(a => a.MonthYear.Trim().Replace("-","").ToUpper() == mKey).Sum(a => a.Amount ?? 0m);
             cmpMonthMap.TryGetValue(mKey, out var cStats);
             return new MonthlyTrendDto(
                 f.MonthYear,
                 f.SilmunInvoiceAmt ?? 0m,
                 advAmt,
                 f.FinalInvoiceAmt ?? 0m,
-                cStats?.TotalChargedUsd ?? (f.SilmunInvoiceAmt ?? 0m),
-                cStats?.TotalIncomePkr ?? 0m,
-                cStats?.InvoiceCount ?? 0);
+                cStats.TotalChargedUsd > 0 ? cStats.TotalChargedUsd : (f.SilmunInvoiceAmt ?? 0m),
+                cStats.TotalIncomePkr,
+                cStats.InvoiceCount);
         }).OrderBy(t => t.MonthYear).ToList();
 
-        // If no finals exist for months that are in company_invoicing, add them to trends
         foreach (var c in cmpByMonth)
         {
-            if (!trends.Any(t => t.MonthYear.Trim() == c.MonthYear.Trim()))
+            var mKey = c.MonthYear.Replace("-","").ToUpper();
+            if (!trends.Any(t => t.MonthYear.Trim().Replace("-","").ToUpper() == mKey))
             {
-                trends.Add(new MonthlyTrendDto(
-                    c.MonthYear,
-                    c.TotalChargedUsd,
-                    0m,
-                    c.TotalChargedUsd,
-                    c.TotalChargedUsd,
-                    c.TotalIncomePkr,
-                    c.InvoiceCount));
+                trends.Add(new MonthlyTrendDto(c.MonthYear, c.TotalChargedUsd, 0m,
+                    c.TotalChargedUsd, c.TotalChargedUsd, c.TotalIncomePkr, c.InvoiceCount));
             }
         }
 
-        // Top companies by charged USD for the selected month
-        var topQuery = activeInvoiceCount > 0 ? monthInvoicesQuery : _context.CompanyInvoices.AsNoTracking();
-        var topCompanies = await topQuery
-            .GroupBy(c => c.InvoiceTo)
-            .Select(g => new
+        // Top 5 vendors for selected month — raw SQL
+        var topDtos = new List<TopCompanyDto>();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandTimeout = 20;
+            cmd.CommandText = activeInvoiceCount > 0
+                ? $@"SELECT TOP 5 ISNULL(invoice_to,0), SUM(ISNULL(charged_amt_usd,0)), COUNT(*)
+                     FROM dbo.company_invoicing
+                     WHERE REPLACE(ISNULL(invoice_month,''),'-','') = '{cleanMonth}'
+                     GROUP BY invoice_to ORDER BY SUM(ISNULL(charged_amt_usd,0)) DESC"
+                : @"SELECT TOP 5 ISNULL(invoice_to,0), SUM(ISNULL(charged_amt_usd,0)), COUNT(*)
+                   FROM dbo.company_invoicing
+                   GROUP BY invoice_to ORDER BY SUM(ISNULL(charged_amt_usd,0)) DESC";
+            using var rdr = await cmd.ExecuteReaderAsync(ct);
+            while (await rdr.ReadAsync(ct))
             {
-                VendorCode      = g.Key,
-                TotalChargedUsd = g.Sum(c => c.ChargedAmtUsd ?? 0m),
-                InvoiceCount    = g.Count()
-            })
-            .OrderByDescending(g => g.TotalChargedUsd)
-            .Take(5)
-            .ToListAsync(ct);
+                var vc = rdr.GetInt32(0);
+                topDtos.Add(new TopCompanyDto(
+                    VendorCode:      vc,
+                    VendorName:      vendors.TryGetValue(vc, out var vn) ? vn : $"Vendor {vc}",
+                    TotalChargedUsd: rdr.GetDecimal(1),
+                    InvoiceCount:    rdr.GetInt32(2)));
+            }
+        }
 
-        var topDtos = topCompanies.Select(t => new TopCompanyDto(
-            VendorCode:      t.VendorCode,
-            VendorName:      vendors.TryGetValue(t.VendorCode, out var vn) ? vn : $"Vendor {t.VendorCode}",
-            TotalChargedUsd: t.TotalChargedUsd,
-            InvoiceCount:    t.InvoiceCount
-        )).ToList();
-
-        // Recent invoices for the selected month
-        var recentQuery = activeInvoiceCount > 0 ? monthInvoicesQuery : _context.CompanyInvoices.AsNoTracking();
-        var recentRows = await recentQuery
+        // Recent 20 invoices for selected month — EF query (simpler, avoids type mapping)
+        var recentDbQuery = activeInvoiceCount > 0
+            ? _context.CompanyInvoices.AsNoTracking()
+                .Where(c => c.InvoiceMonth != null && c.InvoiceMonth.Replace("-", "").ToUpper() == cleanMonth)
+            : _context.CompanyInvoices.AsNoTracking();
+        var recentRows = await recentDbQuery
             .OrderByDescending(c => c.InsertTime)
             .Take(20)
             .ToListAsync(ct);
-
-        var recentDtos = recentRows.Select(c => MapCompany(c, vendors, profiles, projects, entities, null, null, null, projectBranches)).ToList();
+        var recentDtos = recentRows
+            .Select(c => MapCompany(c, vendors, profiles, projects, entities, null, null, null, projectBranches))
+            .ToList();
 
         // Specific settlement numbers for selected month
         var monthFinal = finals.FirstOrDefault(f => f.MonthYear != null && f.MonthYear.Trim().Replace("-", "").ToUpper() == cleanMonth);
