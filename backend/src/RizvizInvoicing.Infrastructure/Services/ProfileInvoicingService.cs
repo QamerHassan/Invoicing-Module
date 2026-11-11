@@ -1732,12 +1732,12 @@ public class ProfileInvoicingService : IProfileInvoicingService
             string ownerFilter;
             if (processedOnly)
             {
-                // Each recipient receives ONLY their own processed invoice records.
-                ownerFilter = "(pi.prfown_code = @grp OR (pi.prfgrp_own_code = @grp AND NOT EXISTS (SELECT 1 FROM dbo.Profile_invoicing x WHERE x.prfown_code = @grp AND REPLACE(RTRIM(x.invoice_month), '-', '') = @m AND x.is_processed = 1)))";
+                // Group owner sees all rows for the group, or their own rows
+                ownerFilter = "(pi.prfgrp_own_code = @grp OR pi.prfown_code = @grp)";
             }
             else
             {
-                ownerFilter = "pi.prfgrp_own_code = @grp";
+                ownerFilter = "(pi.prfgrp_own_code = @grp OR pi.prfown_code = @grp)";
             }
             string processedFilter = processedOnly ? "pi.is_processed = 1" : "(pi.is_processed = 0 OR pi.is_processed IS NULL)";
             string discussedFilter = excludeToBeDiscussed ? "AND (pi.to_be_discussed = 0 OR pi.to_be_discussed IS NULL)" : "";
@@ -2365,6 +2365,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         IsForeign = (curBranchCode == ForeignBranchCode),
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
+                        ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
                         OtherCharge = isOther ? finalUsd : null,
                         ChargedAmtPkr = isOther ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = isOther ? dRow.ExchangeRate : null,
@@ -2415,6 +2416,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ProjectName = curProjName,
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
+                        ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
                         TotalCost = dRow.IsIncluded ? finalUsd : (decimal?)null,
                         OtherCharge = isOther ? finalUsd : null,
                         ChargedAmtPkr = isOther ? dRow.ChargedAmtPkr : null,
@@ -2788,7 +2790,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         if (groupOwnerCode.HasValue && groupOwnerCode.Value > 0)
         {
-            sql += " AND (pi.prfown_code = @grp OR (pi.prfgrp_own_code = @grp AND NOT EXISTS (SELECT 1 FROM dbo.Profile_invoicing x WHERE x.prfown_code = @grp AND (REPLACE(RTRIM(x.invoice_month), '-', '') = @m OR RTRIM(x.invoice_month) = @m) AND x.is_processed = 1)))";
+            sql += " AND (pi.prfgrp_own_code = @grp OR pi.prfown_code = @grp)";
             cmd.Parameters.Add(new SqlParameter("@grp", groupOwnerCode.Value));
         }
 
@@ -3591,7 +3593,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmdFetch.CommandText = $@"
                 SELECT cmp_prof_invoice_code
                 FROM dbo.Profile_invoicing
-                WHERE prfown_code IN ({inClause})
+                WHERE (prfown_code IN ({inClause}) OR prfgrp_own_code IN ({inClause}))
                   AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
                   AND ISNULL(is_processed, 0) = 0";
             cmdFetch.Parameters.Add(Param("@m", cleanMonth));

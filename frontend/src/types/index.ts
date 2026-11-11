@@ -281,6 +281,7 @@ export interface ProfileInvoiceExcelViewRowDto {
   projectName?: string | null;
   serviceHead?: string | null;
   finalUsd?: number | null;
+  chargedAmtUsd?: number | null;
   totalCost?: number | null;
   agreedRate?: number | null;
   hoursDays?: string | null;

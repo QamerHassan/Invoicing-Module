@@ -183,6 +183,7 @@ public class ProfileInvoiceExcelViewRowDto
     public string? ProjectName { get; set; }
     public string? ServiceHead { get; set; }
     public decimal? FinalUsd { get; set; }
+    public decimal? ChargedAmtUsd { get; set; }
     public decimal? TotalCost { get; set; }
     public decimal? AgreedRate { get; set; }
     public string? HoursDays { get; set; }

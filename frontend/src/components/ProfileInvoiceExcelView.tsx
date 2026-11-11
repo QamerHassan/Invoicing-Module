@@ -779,7 +779,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           projectName: row.projectName,
           stack: row.stack,
           invoiceToName: row.profileOwner || data.groupOwnerName,
-          chargedAmtUsd: row.finalUsd ?? row.totalCost,
+          chargedAmtUsd: row.chargedAmtUsd ?? ((row.finalUsd ?? 0) + (row.shareAmount ?? 0)),
           profileName: row.profileOwner || data.groupOwnerName,
           isForeign: row.isForeign,
           isProcessed: row.isProcessed
