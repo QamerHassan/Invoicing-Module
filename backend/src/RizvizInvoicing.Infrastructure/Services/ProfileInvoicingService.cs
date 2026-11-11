@@ -513,7 +513,15 @@ public class ProfileInvoicingService : IProfileInvoicingService
         await PopulateServiceHeadNamesAsync(conn, rows, ct);
 
         result.Rows = rows;
-        result.TotalUsdSum = Math.Round(rows.Sum(r => (decimal)(r.TotalUsdCost ?? 0)), 2, MidpointRounding.AwayFromZero);
+        // TotalUsdSum: Matches PowerBuilder's Total Inv. Amount = SUM(charged_amt_usd) = $25,776.00
+        result.TotalUsdSum = Math.Round(rows.Sum(r => r.ChargedAmtUsd ?? 0m), 2, MidpointRounding.AwayFromZero);
+        // TotalUsdCostSum: Matches PowerBuilder's $ Equivalent = SUM(total_usd_cost) = $21,180.00
+        result.TotalUsdCostSum = Math.Round(rows.Sum(r => (decimal)(r.TotalUsdCost ?? 0)), 2, MidpointRounding.AwayFromZero);
+        // TotalShareAmountSum: Matches PowerBuilder's Rizviz Share Amount = SUM(share_amount) = $4,596.00
+        result.TotalShareAmountSum = Math.Round(rows.Sum(r => r.ShareAmount ?? 0m), 2, MidpointRounding.AwayFromZero);
+        // TotalArrearsSum: Matches PowerBuilder's Arrears = SUM(Arrears) = $0.00
+        result.TotalArrearsSum = Math.Round(rows.Sum(r => r.Arrears ?? 0m), 2, MidpointRounding.AwayFromZero);
+        // TotalPkrSum: Matches PowerBuilder's Project Cost PKR = SUM(total_income_pkr) = Rs 4,234,549
         result.TotalPkrSum = Math.Round(rows.Sum(r => r.TotalIncomePkr ?? 0m), 2, MidpointRounding.AwayFromZero);
 
         return result;

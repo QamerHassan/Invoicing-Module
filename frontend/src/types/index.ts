@@ -180,6 +180,9 @@ export interface ProfileInvoiceDryRunResult {
   ownerCodes: number[];
   countsBySource: Record<string, number>;
   totalUsdSum: number;
+  totalUsdCostSum?: number;
+  totalShareAmountSum?: number;
+  totalArrearsSum?: number;
   totalPkrSum: number;
   rows: ProfileInvoiceRowDto[];
 }
@@ -216,6 +219,9 @@ export interface ProfileInvoiceSaveResult {
   firstPcomCode: number;
   lastPcomCode: number;
   totalUsdSum: number;
+  totalUsdCostSum?: number;
+  totalShareAmountSum?: number;
+  totalArrearsSum?: number;
   totalPkrSum: number;
   savedRows: ProfileInvoiceSavedRowDto[];
 }
@@ -252,6 +258,9 @@ export interface ProfileInvoiceRowUpdateResponse {
   message?: string;
   updatedRow?: ProfileInvoiceRowDto;
   totalUsdSum: number;
+  totalUsdCostSum?: number;
+  totalShareAmountSum?: number;
+  totalArrearsSum?: number;
   totalPkrSum: number;
   excelView?: ProfileInvoiceExcelViewResult;
 }

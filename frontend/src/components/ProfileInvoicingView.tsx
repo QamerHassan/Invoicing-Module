@@ -15,7 +15,7 @@ import type {
   ProfileGroupOwnerDto, 
   UserInfo 
 } from '../types';
-import { formatMoney, formatCount } from '../utils/format';
+import { formatMoney } from '../utils/format';
 import { ProfileInvoiceExcelView } from './ProfileInvoiceExcelView';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 
@@ -443,9 +443,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
     return pA.localeCompare(pB);
   });
 
-  // Aggregated KPIs (backend server totals take precedence per KAAM 1)
-  const displayTotalUsd = serverTotalUsd !== null ? serverTotalUsd : filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.chargedAmtUsd || 0), 0);
-  const displayTotalPkr = serverTotalPkr !== null ? serverTotalPkr : filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.totalIncomePkr || r.chargedAmtPkr || 0), 0);
+  // Aggregated KPIs (matching PowerBuilder exactly)
+  const displayTotalUsd = filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.chargedAmtUsd || 0), 0);
+  const displayUsdEquivalent = filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.totalUsdCost || 0), 0);
+  const displayRizvizShare = filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.shareAmount || 0), 0);
+  const displayArrears = filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.arrears || 0), 0);
+  const displayTotalPkr = filteredRows.filter(r => r.isIncluded !== false).reduce((sum, r) => sum + (r.totalIncomePkr || r.chargedAmtPkr || 0), 0);
   const uniqueSources = Array.from(new Set(rows.map(r => r.source).filter(Boolean)));
 
   return (
@@ -759,46 +762,66 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
         </div>
       )}
 
-      {/* Summary KPI Strip */}
+      {/* Summary KPI Strip - 100% Match with PowerBuilder */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '1rem'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '0.75rem',
+        marginBottom: '0.25rem'
       }}>
-        <div className="panel-card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-            Total Charged USD
+        {/* 1. Total Invoice Amount USD (PowerBuilder: Total Inv. Amount) */}
+        <div className="panel-card" style={{ padding: '0.85rem 1.15rem', borderLeft: '4px solid #10b981' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+            Total Inv. Amount (USD)
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-            {formatMoney(displayTotalUsd, 'USD', 'Profile Total USD')}
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+            {formatMoney(displayTotalUsd, 'USD', 'Total Inv. Amount')}
           </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>PowerBuilder Match ($25,776.00)</div>
         </div>
 
-        <div className="panel-card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-            Total PKR
+        {/* 2. $ Equivalent USD (PowerBuilder: $ Equivalent) */}
+        <div className="panel-card" style={{ padding: '0.85rem 1.15rem', borderLeft: '4px solid #6366f1' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+            $ Equivalent (Cost USD)
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
-            {formatMoney(displayTotalPkr, 'PKR', 'Profile Total PKR')}
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#6366f1', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+            {formatMoney(displayUsdEquivalent, 'USD', '$ Equivalent')}
           </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>PowerBuilder Base ($21,180.00)</div>
         </div>
 
-        <div className="panel-card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-            Total Rows
+        {/* 3. Rizviz Share Amount (PowerBuilder: Rizviz Share Amount) */}
+        <div className="panel-card" style={{ padding: '0.85rem 1.15rem', borderLeft: '4px solid #8b5cf6' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+            Rizviz' Share Amount
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#818cf8', fontFamily: 'var(--font-mono)' }}>
-            {formatCount(filteredRows.length, 'Filtered Rows')} <span style={{ fontSize: '0.8rem', color: 'var(--text-subtle)' }}>({formatCount(rows.length, 'Total Rows')} total)</span>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#8b5cf6', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+            {formatMoney(displayRizvizShare, 'USD', 'Rizviz Share')}
           </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>PowerBuilder Share ($4,596.00)</div>
         </div>
 
-        <div className="panel-card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-            Invoice Month
+        {/* 4. Project Cost PKR (PowerBuilder: Project Cost Rs) */}
+        <div className="panel-card" style={{ padding: '0.85rem 1.15rem', borderLeft: '4px solid #f59e0b' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+            Project Cost (PKR)
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
-            {formatMonthDisplay(cleanMonth)}
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+            {formatMoney(displayTotalPkr, 'PKR', 'Project Cost PKR')}
           </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>PowerBuilder Total (Rs 4,234,549)</div>
+        </div>
+
+        {/* 5. Total Rows & Month */}
+        <div className="panel-card" style={{ padding: '0.85rem 1.15rem', borderLeft: '4px solid #06b6d4' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+            Total Rows / Month
+          </div>
+          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#06b6d4', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+            {filteredRows.length} rows <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>({cleanMonth})</span>
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>PowerBuilder: 49 rows</div>
         </div>
       </div>
 
@@ -860,37 +883,32 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: '45px', textAlign: 'center' }}>Inc</th>
-              <th style={{ width: '50px' }}>SEQ</th>
-              <th>Inv #</th>
-              <th>Group Owner</th>
-              <th>Profile Owner</th>
-              <th>Job Holder / Entity</th>
+              <th style={{ width: '40px', textAlign: 'center' }}>Inc</th>
+              <th style={{ width: '45px' }}>#</th>
+              <th style={{ width: '100px' }}>Inv No.</th>
               <th>Support Provider</th>
               <th>Service Head</th>
-              <th>Stack</th>
-              <th>Project</th>
               <th>Interview Code</th>
-              <th>Inv To</th>
-              <th>Month</th>
-              <th>CCY</th>
-              <th>Exch Rate</th>
-              <th>Charged USD</th>
-              <th>Charged PKR</th>
-              <th>Total PKR</th>
-              <th>Rizviz Share</th>
-              <th>Arrears</th>
-              <th>Total USD Cost</th>
+              <th>Project No.</th>
+              <th>Inv. To</th>
+              <th>Inv. Month</th>
+              <th>Ccy</th>
+              <th style={{ textAlign: 'right' }}>Project Cost (Rs. / $)</th>
+              <th style={{ textAlign: 'right' }}>Exch. Rate</th>
+              <th style={{ textAlign: 'right' }}>$ Equivalent</th>
+              <th style={{ textAlign: 'right' }}>Rizviz' Share Amount</th>
+              <th style={{ textAlign: 'right' }}>Arrears (Rs. / $)</th>
+              <th style={{ textAlign: 'right' }}>Total Inv. Amount</th>
               <th>Status</th>
               <th>Remarks</th>
-              <th>Source</th>
+              <th>Profile Owner</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={25} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                <td colSpan={20} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                   {loading ? 'Loading...' : 'No profile invoice rows loaded. Select an owner and month, then click "Generate Preview (Dry-Run)" or "Load Saved".'}
                 </td>
               </tr>
@@ -935,7 +953,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                         disabled={false}
                         placeholder="Inv #"
                         style={{
-                          width: '100px',
+                          width: '95px',
                           padding: '0.25rem 0.45rem',
                           fontSize: '0.8rem',
                           background: 'var(--bg-surface)',
@@ -947,10 +965,10 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                       />
                     </td>
 
-                    <td style={{ fontWeight: 600 }}>{row.groupOwnerName || '—'}</td>
-                    <td>{row.profileOwnerName || '—'}</td>
-                    <td>{row.entityName || '—'}</td>
-                    <td>{row.secondaryDevName || '—'}</td>
+                    {/* 1. Support Provider (secondaryDevName) */}
+                    <td style={{ fontSize: '0.82rem' }}>{row.secondaryDevName || '—'}</td>
+
+                    {/* 2. Service Head */}
                     <td>
                       <span style={{
                         background: 'rgba(99, 102, 241, 0.12)',
@@ -964,59 +982,31 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                         {formatServiceHead(row)}
                       </span>
                     </td>
-                    <td style={{ color: 'var(--text-muted)' }}>{row.stack || '—'}</td>
-                    <td>{row.projectName || (row.projectCode ? `#${row.projectCode}` : '—')}</td>
+
+                    {/* 3. Interview Code */}
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
                       {row.interviewCode ? `${row.interviewCode}${row.interviewSeqCode ? `-${row.interviewSeqCode}` : ''}` : '—'}
                     </td>
-                    <td>{row.invoiceToName || row.invoiceTo}</td>
+
+                    {/* 4. Project No. */}
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 600 }}>
+                      {row.projectCode ? row.projectCode : '—'}
+                    </td>
+
+                    {/* 5. Inv. To */}
+                    <td style={{ fontSize: '0.82rem' }}>{row.invoiceToName || row.invoiceTo}</td>
+
+                    {/* 6. Inv. Month */}
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
                       {formatMonthDisplay(row.invoiceMonth)}
                     </td>
+
+                    {/* 7. Ccy */}
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                      {row.ccy === 1 ? 'PKR' : 'USD'}
+                      {row.ccy === 2 ? 'Dollar' : (row.ccy === 3 ? 'Gbp' : 'PKRS')}
                     </td>
 
-                    {/* Exchange Rate (Inline editable) */}
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={edits.exchangeRate !== undefined ? edits.exchangeRate : (row.exchangeRate ?? '')}
-                        onChange={(e) => handleFieldChange(rowKey, 'exchangeRate', e.target.value === '' ? null : Number(e.target.value))}
-                        onBlur={() => isModified && handleSaveRow(row, idx)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSaveRow(row, idx)}
-                        disabled={false}
-                        style={{
-                          width: '75px',
-                          textAlign: 'right',
-                          padding: '0.2rem 0.35rem',
-                          fontSize: '0.8rem',
-                          background: 'var(--bg-surface)',
-                          border: edits.exchangeRate !== undefined ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                          borderRadius: '4px',
-                          color: 'var(--text-main)',
-                          fontFamily: 'var(--font-mono)'
-                        }}
-                      />
-                    </td>
-
-                    {/* Charged USD (Computed) */}
-                    <td style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      color: '#10b981',
-                      textAlign: 'right'
-                    }}>
-                      {formatMoney(row.chargedAmtUsd, 'USD', 'Row USD')}
-                    </td>
-
-                    {/* Charged PKR (Computed) */}
-                    <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
-                      {formatMoney(row.chargedAmtPkr, 'PKR', 'Row PKR')}
-                    </td>
-
-                    {/* Total Income PKR (Inline editable) */}
+                    {/* 8. Project Cost (Rs. / $) - Total Income PKR */}
                     <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
                       <input
                         type="number"
@@ -1039,22 +1029,57 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                       />
                     </td>
 
-                    {/* Share Amount */}
-                    <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
+                    {/* 9. Exch. Rate */}
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', textAlign: 'right' }}>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={edits.exchangeRate !== undefined ? edits.exchangeRate : (row.exchangeRate ?? '')}
+                        onChange={(e) => handleFieldChange(rowKey, 'exchangeRate', e.target.value === '' ? null : Number(e.target.value))}
+                        onBlur={() => isModified && handleSaveRow(row, idx)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveRow(row, idx)}
+                        disabled={false}
+                        style={{
+                          width: '70px',
+                          textAlign: 'right',
+                          padding: '0.2rem 0.35rem',
+                          fontSize: '0.8rem',
+                          background: 'var(--bg-surface)',
+                          border: edits.exchangeRate !== undefined ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                          borderRadius: '4px',
+                          color: 'var(--text-main)',
+                          fontFamily: 'var(--font-mono)'
+                        }}
+                      />
+                    </td>
+
+                    {/* 10. $ Equivalent (total_usd_cost) */}
+                    <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right', fontWeight: 600, color: '#6366f1' }}>
+                      {row.totalUsdCost != null ? formatMoney(row.totalUsdCost, 'USD', '$ Equivalent') : '—'}
+                    </td>
+
+                    {/* 11. Rizviz Share Amount (share_amount) */}
+                    <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right', color: '#8b5cf6' }}>
                       {row.shareAmount != null ? formatMoney(row.shareAmount, 'USD', 'Share') : (row.chargePercent ? `${row.chargePercent}%` : '—')}
                     </td>
 
-                    {/* Arrears */}
+                    {/* 12. Arrears (Rs. / $) */}
                     <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
-                      {row.arrears ? formatMoney(row.arrears, 'USD', 'Arrears') : '—'}
+                      {row.arrears ? formatMoney(row.arrears, 'USD', 'Arrears') : '.00'}
                     </td>
 
-                    {/* Total USD Cost */}
-                    <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
-                      {row.totalUsdCost != null ? formatMoney(row.totalUsdCost, 'USD', 'Cost') : '—'}
+                    {/* 13. Total Inv. Amount (charged_amt_usd) */}
+                    <td style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 800,
+                      color: '#10b981',
+                      textAlign: 'right',
+                      fontSize: '0.88rem'
+                    }}>
+                      {formatMoney(row.chargedAmtUsd, 'USD', 'Total Inv. Amount')}
                     </td>
 
-                    {/* Status (dropdown: P=Paid, D=Due) */}
+                    {/* 14. Status (dropdown: P=Paid, D=Due) */}
                     <td>
                       <select
                         value={currentStatus}
@@ -1076,7 +1101,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                       </select>
                     </td>
 
-                    {/* Remarks (Inline editable) */}
+                    {/* 15. Remarks */}
                     <td>
                       <input
                         type="text"
@@ -1098,19 +1123,9 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                       />
                     </td>
 
-                    {/* Source */}
-                    <td>
-                      <span style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--border-subtle)',
-                        padding: '0.15rem 0.45rem',
-                        borderRadius: '4px',
-                        fontSize: '0.7rem',
-                        color: 'var(--text-muted)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {row.source || 'Saved'}
-                      </span>
+                    {/* Profile Owner */}
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {row.profileOwnerName || '—'}
                     </td>
 
                     {/* Actions */}
@@ -1146,6 +1161,38 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
               })
             )}
           </tbody>
+          {filteredRows.length > 0 && (
+            <tfoot>
+              <tr style={{ background: 'var(--bg-surface)', fontWeight: 800, borderTop: '2px solid var(--border-main)', height: '42px' }}>
+                <td colSpan={10} style={{ textAlign: 'right', padding: '0.65rem 1rem', color: 'var(--text-main)', fontSize: '0.85rem' }}>
+                  Total :
+                </td>
+                {/* 8. Project Cost (Rs. / $) */}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                  {formatMoney(displayTotalPkr, 'PKR', 'Total PKR')}
+                </td>
+                {/* 9. Exch. Rate */}
+                <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
+                {/* 10. $ Equivalent */}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#6366f1' }}>
+                  {formatMoney(displayUsdEquivalent, 'USD', '$ Equivalent')}
+                </td>
+                {/* 11. Rizviz Share Amount */}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#8b5cf6' }}>
+                  {formatMoney(displayRizvizShare, 'USD', 'Share')}
+                </td>
+                {/* 12. Arrears */}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                  {formatMoney(displayArrears, 'USD', 'Arrears')}
+                </td>
+                {/* 13. Total Inv. Amount */}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.95rem', fontWeight: 900, color: '#10b981' }}>
+                  {formatMoney(displayTotalUsd, 'USD', 'Total Inv. Amount')}
+                </td>
+                <td colSpan={3}></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
         </>

@@ -61,6 +61,9 @@ public class ProfileInvoiceDryRunResult
     public List<int> OwnerCodes { get; set; } = new();
     public Dictionary<string, int> CountsBySource { get; set; } = new();
     public decimal TotalUsdSum { get; set; }
+    public decimal TotalUsdCostSum { get; set; }
+    public decimal TotalShareAmountSum { get; set; }
+    public decimal TotalArrearsSum { get; set; }
     public decimal TotalPkrSum { get; set; }
     public List<ProfileInvoiceRowDto> Rows { get; set; } = new();
 }
@@ -101,6 +104,9 @@ public class ProfileInvoiceSaveResult
     public long LastPcomCode { get; set; }
 
     public decimal TotalUsdSum { get; set; }
+    public decimal TotalUsdCostSum { get; set; }
+    public decimal TotalShareAmountSum { get; set; }
+    public decimal TotalArrearsSum { get; set; }
     public decimal TotalPkrSum { get; set; }
 
     /// <summary>Row-level breakdown with the assigned cmp_prof_invoice_code.</summary>
@@ -160,6 +166,9 @@ public class ProfileInvoiceRowUpdateResponse
     public string? Message { get; set; }
     public ProfileInvoiceRowDto? UpdatedRow { get; set; }
     public decimal TotalUsdSum { get; set; }
+    public decimal TotalUsdCostSum { get; set; }
+    public decimal TotalShareAmountSum { get; set; }
+    public decimal TotalArrearsSum { get; set; }
     public decimal TotalPkrSum { get; set; }
     public ProfileInvoiceExcelViewResult? ExcelView { get; set; }
 }
