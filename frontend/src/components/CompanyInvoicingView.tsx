@@ -184,10 +184,12 @@ export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
     }
   };
 
-  // Load on initial render and when monthYear changes
+  // Load on initial render and when monthYear changes — parallel for speed
   useEffect(() => {
-    fetchInvoices(monthYear);
-    fetchProfileProjects(selectedOwnerId);
+    Promise.all([
+      fetchInvoices(monthYear),
+      fetchProfileProjects(selectedOwnerId)
+    ]).catch(() => {});
   }, [monthYear]);
 
   // When owner selection changes in Single mode, update top grid filter

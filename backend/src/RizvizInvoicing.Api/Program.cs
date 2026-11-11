@@ -79,12 +79,34 @@ try
     var jwtAudience = configuration["Jwt:Audience"] ?? "RizvizInvoicingWeb";
 
     // ── Database ─────────────────────────────────────────────────────────────
+    // Tune connection string for speed: larger pool, faster timeout
+    var csb2 = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connString);
+    csb2.MinPoolSize = 3;
+    csb2.MaxPoolSize = 20;
+    csb2.ConnectTimeout = 15;
+    csb2.CommandTimeout = 45;
+    csb2.ApplicationName = "RizvizInvoicingApi";
+    var tunedConnStr = csb2.ToString();
+
     builder.Services.AddDbContext<InvoicingDbContext>(opt =>
-        opt.UseSqlServer(connString, sql =>
+        opt.UseSqlServer(tunedConnStr, sql =>
         {
-            sql.CommandTimeout(60);
-            sql.EnableRetryOnFailure(3);
+            sql.CommandTimeout(45);
+            sql.EnableRetryOnFailure(2, TimeSpan.FromSeconds(2), null);
         }));
+
+    // ── In-Memory Cache (for lookups, billing months, etc.) ─────────────────
+    builder.Services.AddMemoryCache(opt =>
+    {
+        opt.SizeLimit = 1024; // entries
+        opt.ExpirationScanFrequency = TimeSpan.FromMinutes(5);
+    });
+
+    // ── Response Compression ─────────────────────────────────────────────────
+    builder.Services.AddResponseCompression(opt =>
+    {
+        opt.EnableForHttps = true;
+    });
 
     // ── Application Services ─────────────────────────────────────────────────
     builder.Services.AddScoped<IAuthService, AuthService>();
@@ -187,6 +209,7 @@ try
     // ── Build App ─────────────────────────────────────────────────────────────
     var app = builder.Build();
 
+    app.UseResponseCompression();
     app.UseSerilogRequestLogging();
     app.UseCors("AllowFrontend");
 
@@ -276,6 +299,28 @@ try
     .WithName("SystemDbInfo")
     .WithTags("System")
     .AllowAnonymous();
+
+    // ── DB Warm-up: pre-open connection pool on startup to eliminate cold-start lag ──
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Task.Delay(500); // let app fully start first
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<InvoicingDbContext>();
+            var conn = db.Database.GetDbConnection();
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1";
+            await cmd.ExecuteScalarAsync();
+            await conn.CloseAsync();
+            Log.Information("DB connection pool warmed up successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("DB warm-up failed (non-fatal): {Msg}", ex.Message);
+        }
+    });
 
     app.Run();
 }

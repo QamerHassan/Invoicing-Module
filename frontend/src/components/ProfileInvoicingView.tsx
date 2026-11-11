@@ -185,7 +185,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
     return false;
   };
 
-  // Load Group Owners on Mount
+  // Load Group Owners on Mount — parallel with invoiced months
   useEffect(() => {
     const fetchGroupOwners = async () => {
       try {
