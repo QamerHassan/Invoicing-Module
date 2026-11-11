@@ -215,23 +215,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     setLoading(true);
     setError(null);
     try {
-      // Use generate-open: if invoices already exist, it returns existing rows immediately;
-      // if not yet generated, it generates and loads them seamlessly.
-      const genRes = await api.generateAndOpenProfileInvoices(Number(selectedOwnerCode), cleanMonth);
-      const freshData = genRes.excelView || (await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth));
+      // Direct fast excel-view load (auto-generates if not yet present)
+      const freshData = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
       setData(freshData);
       setSelectedRowIndices(computeInitialSelectedIndices(freshData));
       setProcessMsg(null);
     } catch (err: any) {
       console.error('Failed to load excel view', err);
-      try {
-        const fallback = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-        setData(fallback);
-        setSelectedRowIndices(computeInitialSelectedIndices(fallback));
-      } catch {
-        setError(err?.message || 'Failed to load excel view from server.');
-        setData(null);
-      }
+      setError(err?.message || 'Failed to load excel view from server.');
+      setData(null);
     } finally {
       setLoading(false);
     }

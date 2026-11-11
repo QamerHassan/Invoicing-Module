@@ -63,9 +63,9 @@
   --border-discuss-row: #dc2626;
   --text-discuss-row: #fecaca;
 
-  /* Excel View Styling Variables (Dark Theme) */
-  --excel-cell-font-size: 15px;
-  --excel-header-font-size: 14px;
+  /* Excel View Styling Variables (Dark Theme) - Compact PB Enterprise Layout */
+  --excel-cell-font-size: 12.5px;
+  --excel-header-font-size: 12px;
   --excel-cost-color: var(--text-main);
   --excel-agreed-color: #4ade80;
   --excel-actual-color: #f87171;
@@ -526,8 +526,8 @@ tr.discuss-row:hover td,
 .compact-table {
   width: 100% !important;
   border-collapse: collapse !important;
-  font-size: var(--excel-cell-font-size, 15px) !important;
-  line-height: 1.3 !important;
+  font-size: var(--excel-cell-font-size, 12.5px) !important;
+  line-height: 1.25 !important;
   border-spacing: 0 !important;
 }
 
@@ -537,9 +537,9 @@ tr.discuss-row:hover td,
   z-index: 10;
   background: #1e293b !important;
   color: #f8fafc !important;
-  padding: 0.4rem 0.5rem !important;
+  padding: 0.25rem 0.4rem !important;
   font-weight: 700 !important;
-  font-size: var(--excel-header-font-size, 14px) !important;
+  font-size: var(--excel-header-font-size, 12px) !important;
   border: 1px solid #334155 !important;
   white-space: nowrap !important;
   box-shadow: 0 1px 0 var(--border-medium) !important;
@@ -552,10 +552,11 @@ tr.discuss-row:hover td,
   color: var(--text-main) !important;
   border-bottom: 2px solid var(--border-medium) !important;
   box-sizing: border-box !important;
+  padding: 0.25rem 0.4rem !important;
 }
 
 .compact-table thead tr.column-header-row th {
-  top: 56px !important;
+  top: 48px !important;
   z-index: 11 !important;
 }
 
@@ -565,9 +566,9 @@ tr.discuss-row:hover td,
 }
 
 .compact-table td {
-  padding: 4px 6px !important;
+  padding: 2px 5px !important;
   border: 1px solid var(--border-subtle) !important;
-  font-size: var(--excel-cell-font-size, 15px) !important;
-  height: 28px !important;
+  font-size: var(--excel-cell-font-size, 12.5px) !important;
+  height: 24px !important;
   box-sizing: border-box !important;
 }
