@@ -31,14 +31,36 @@ import type {
   UserEmailSettingsDto
 } from '../types';
 
+// In production, VITE_API_BASE_URL must be set in Vercel Environment Variables.
+// In development, falls back to localhost:5290.
+// Never hardcode the Back4App URL here — it changes with every deployment.
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://invoicingmodule-c2fxnqua.back4.app')
+  (import.meta.env.DEV ? 'http://localhost:5290' : '')
 ).replace(/\/$/, '');
+
+if (!BASE_URL && !import.meta.env.DEV) {
+  console.error('[API] VITE_API_BASE_URL is not set! Set it in Vercel Environment Variables.');
+}
 
 function getAuthHeader(): Record<string, string> {
   const token = localStorage.getItem('token');
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// Retry fetch with exponential backoff for transient network errors
+async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      // Wait 1s, then 2s before retrying
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw new Error('Network request failed after retries');
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -67,7 +89,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 export const api = {
   // Auth
   async login(username: string, password: string): Promise<AuthResponse> {
-    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
@@ -78,14 +100,14 @@ export const api = {
   // Dashboard
   async getDashboard(month?: string): Promise<DashboardSummaryDto> {
     const q = month ? `?month=${encodeURIComponent(month.trim().replace('-', '').toUpperCase())}` : '';
-    const res = await fetch(`${BASE_URL}/api/dashboard${q}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/dashboard${q}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<DashboardSummaryDto>(res);
   },
 
   async getBillingMonths(): Promise<string[]> {
-    const res = await fetch(`${BASE_URL}/api/dashboard/billing-months`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/dashboard/billing-months`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<string[]>(res);
