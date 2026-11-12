@@ -36,7 +36,7 @@ import type {
 // Update VITE_API_BASE_URL in Vercel dashboard whenever Back4App URL changes.
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://invoicingmodule-9b3umdsa.back4.app')
+  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://invoicingmodule-55e8ftwd.back4.app')
 ).replace(/\/$/, '');
 
 function getAuthHeader(): Record<string, string> {
