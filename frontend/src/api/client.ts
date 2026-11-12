@@ -31,12 +31,11 @@ import type {
   UserEmailSettingsDto
 } from '../types';
 
-// In production, VITE_API_BASE_URL must be set in Vercel Environment Variables.
+// In production, uses AWS EC2 permanent HTTPS endpoint with Caddy Let's Encrypt SSL
 // In development, falls back to localhost:5290.
-// Update VITE_API_BASE_URL in Vercel dashboard whenever Back4App URL changes.
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://invoicingmodule-55e8ftwd.back4.app')
+  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://13.211.80.94.sslip.io')
 ).replace(/\/$/, '');
 
 function getAuthHeader(): Record<string, string> {
