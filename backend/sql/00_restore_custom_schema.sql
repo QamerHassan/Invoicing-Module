@@ -16,7 +16,7 @@
 --   5. COLUMN on mkt.Projects:
 --        - branch_code (INT NULL: foreign branch identification, e.g. branch_code = 5)
 --   6. INDEXES for performance on audit logs & profile invoicing
---   7. BACKFILL: Sets is_included = 0 for Executive rows ('E'), 1 for others (only where NULL)
+--   7. BACKFILL: Sets is_included = 1 for all rows (PB default, only where NULL)
 --   8. SECURITY: App user [InvoicingAppUser] mapped with db_datareader, db_datawriter & EXECUTE
 -- ==============================================================================================
 
@@ -318,8 +318,7 @@ END;
 -- STEP 7: BACKFILL DATA FOR is_included AND to_be_discussed
 -- Uses dynamic SQL to prevent batch compilation errors when columns were just added.
 -- Backfills ONLY rows where is_included IS NULL so existing user edits are NEVER overwritten.
--- Executive rows (mkt.Projects.profile_type = ''E'' or prof.Profile_Owners.Profile_type = ''E'') -> 0
--- All other rows -> 1
+-- All rows default to is_included = 1 (matching PB behavior)
 -- ----------------------------------------------------------------------------------------------
 IF OBJECT_ID('dbo.Profile_invoicing', 'U') IS NOT NULL 
    AND COL_LENGTH('dbo.Profile_invoicing', 'is_included') IS NOT NULL
@@ -332,15 +331,9 @@ BEGIN
         IF @NullCount > 0
         BEGIN
             PRINT ''  Found '' + CAST(@NullCount AS NVARCHAR(10)) + '' row(s) with NULL is_included. Applying backfill...'';
-            UPDATE pi
-            SET pi.is_included = CASE 
-                WHEN ISNULL(p.profile_type, '''') = ''E'' OR ISNULL(po.Profile_type, '''') = ''E'' THEN 0 
-                ELSE 1 
-            END
-            FROM dbo.Profile_invoicing pi
-            LEFT JOIN mkt.Projects p ON p.project_code = pi.project_code
-            LEFT JOIN prof.Profile_Owners po ON po.prfown_code = pi.prfown_code
-            WHERE pi.is_included IS NULL;
+            UPDATE dbo.Profile_invoicing
+            SET is_included = 1
+            WHERE is_included IS NULL;
             PRINT ''  -> is_included backfill completed successfully.'';
         END
         ELSE

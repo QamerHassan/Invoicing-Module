@@ -496,7 +496,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             bool isExec = (r.ProjectCode.HasValue && projectProfileTypes.TryGetValue(r.ProjectCode.Value, out var pt) && pt == "E")
                        || (r.PrfownCode.HasValue && ownerProfileTypes.TryGetValue(r.PrfownCode.Value, out var ot) && ot == "E");
             r.IsExecutive = isExec;
-            r.IsIncluded = !isExec; // Default: Real executive unchecked (false), others checked (true)
+            r.IsIncluded = true; // All rows default checked (true) matching PB
         }
 
         // Use total_usd_cost (PB's "Total Cost" measure) — NOT charged_amt_usd.
@@ -867,7 +867,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                        pi.invoice_number, pi.exchange_rate, pi.charg_type_code,
                        pi.support_status, pi.interview_code, pi.interview_seq_code,
                        pi.month_days, pi.pro_rate_days,
-                       ISNULL(pi.is_included, CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 0 ELSE 1 END) AS is_included,
+                       ISNULL(pi.is_included, 1) AS is_included,
                        CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 1 ELSE 0 END AS is_executive
                 FROM dbo.Profile_invoicing pi
                 LEFT JOIN mkt.Projects p ON p.project_code = pi.project_code
@@ -1745,7 +1745,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmd.CommandText = $@"
                 SELECT pi.cmp_prof_invoice_code, pi.prfown_code, pi.project_code, pi.interview_code, pi.charg_type_code,
                        pi.charged_amt_usd, pi.total_usd_cost, pi.resource_type, pi.invoice_to,
-                       ISNULL(pi.is_included, CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 0 ELSE 1 END) AS is_included,
+                       ISNULL(pi.is_included, 1) AS is_included,
                        CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 1 ELSE 0 END AS is_executive,
                        pi.charged_amt_pkr, pi.exchange_rate, pi.share_amount,
                        ISNULL(pi.to_be_discussed, 0) AS to_be_discussed,
@@ -2342,8 +2342,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     }
                 }
 
-                // Executive project rule
-                if (curProj > 0 && string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase))
+                // PB rule: Company projects (profile_type = 'C') exclude Other Charge.
+                // Executive projects (profile_type = 'E') DO have Other charges included (Bonus, BD Recurr, DEV Recurr, etc.)
+                if (curProj > 0 && string.Equals(curProfileType?.Trim(), "C", StringComparison.OrdinalIgnoreCase))
                 {
                     isOther = false;
                 }

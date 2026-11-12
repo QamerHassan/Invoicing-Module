@@ -1764,7 +1764,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                               checked={row.isIncluded ?? true}
                               disabled={togglingCode === row.cmpProfInvoiceCode}
                               onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode!, e.target.checked)}
-                              title={row.isExecutive ? 'Real Executive (Unchecked by default) - click to toggle & save' : 'Include in totals - click to toggle & save'}
+                              title="Include in totals - click to toggle & save"
                               style={{ cursor: 'pointer', width: '14px', height: '14px' }}
                             />
                             {editingCell?.rowIdx === idx && (

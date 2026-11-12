@@ -154,31 +154,31 @@ public class ProfileInvoiceExcelViewTests
         using var wb = new XLWorkbook(ms);
         var ws = wb.Worksheet(1);
 
-        // 1. Header validation (16 columns: Stack moved before Project Name)
-        Assert.Equal("Include", ws.Cell(4, 1).GetString());
-        Assert.Equal("Profile Owner", ws.Cell(4, 2).GetString());
-        Assert.Equal("Project Code", ws.Cell(4, 3).GetString());
-        Assert.Equal("Stack", ws.Cell(4, 4).GetString());
-        Assert.Equal("Project Name", ws.Cell(4, 5).GetString());
-        Assert.Equal("Actual Charges", ws.Cell(4, 9).GetString());
-        Assert.Equal("Other Charge", ws.Cell(4, 10).GetString());
+        // 1. Header validation (16 columns PB exact)
+        Assert.Equal("Profile Owner", ws.Cell(4, 1).GetString());
+        Assert.Equal("Project Code", ws.Cell(4, 2).GetString());
+        Assert.Equal("Stack", ws.Cell(4, 3).GetString());
+        Assert.Equal("Project Name", ws.Cell(4, 4).GetString());
+        Assert.Equal("Actual Charges", ws.Cell(4, 8).GetString());
+        Assert.Equal("Other Charge", ws.Cell(4, 9).GetString());
+        Assert.Equal("Include", ws.Cell(4, 10).GetString());
 
-        // 2. Row 3 formulas & values (Col 9 = Actual Charges Sum, Col 10 = Other Charge Sum)
+        // 2. Row 3 formulas & values (Col 8 = Actual Charges Sum, Col 9 = Other Charge Sum)
+        string formulaH3 = ws.Cell(3, 8).FormulaA1;
         string formulaI3 = ws.Cell(3, 9).FormulaA1;
-        string formulaJ3 = ws.Cell(3, 10).FormulaA1;
-        Assert.StartsWith("SUMIF(A5:A", formulaI3);
-        Assert.StartsWith("SUMIF(A5:A", formulaJ3);
+        Assert.StartsWith("SUMIF(J5:J", formulaH3);
+        Assert.StartsWith("SUMIF(J5:J", formulaI3);
 
+        decimal valH3 = Convert.ToDecimal(ws.Cell(3, 8).Value.GetNumber());
         decimal valI3 = Convert.ToDecimal(ws.Cell(3, 9).Value.GetNumber());
-        decimal valJ3 = Convert.ToDecimal(ws.Cell(3, 10).Value.GetNumber());
-        Assert.Equal(view.ActualChargesSum, valI3);
-        Assert.Equal(view.OtherChargeSum, valJ3);
+        Assert.Equal(view.ActualChargesSum, valH3);
+        Assert.Equal(view.OtherChargeSum, valI3);
 
-        // 3. Row 1 Total Invoice formula & value (Col 10 = ROUND(I3 + J3, 0))
-        string formulaJ1 = ws.Cell(1, 10).FormulaA1;
-        Assert.Contains("I3 + J3", formulaJ1);
-        decimal valJ1 = Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber());
-        Assert.Equal(view.TotalInvoice, valJ1);
+        // 3. Row 1 Total Invoice formula & value (Col 9 = ROUND(H3 + I3, 0))
+        string formulaI1 = ws.Cell(1, 9).FormulaA1;
+        Assert.Contains("H3 + I3", formulaI1);
+        decimal valI1 = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
+        Assert.Equal(view.TotalInvoice, valI1);
 
         // 4. Live formula test: change first included row with amount to 0
         int lastRow = Math.Max(5, 4 + view.Rows.Count);
@@ -188,22 +188,22 @@ public class ProfileInvoiceExcelViewTests
 
         for (int r = 5; r <= lastRow; r++)
         {
-            if (ws.Cell(r, 1).Value.IsNumber && Convert.ToInt32(ws.Cell(r, 1).Value.GetNumber()) == 1)
+            if (ws.Cell(r, 10).Value.IsNumber && Convert.ToInt32(ws.Cell(r, 10).Value.GetNumber()) == 1)
             {
+                var hCell = ws.Cell(r, 8);
                 var iCell = ws.Cell(r, 9);
-                var jCell = ws.Cell(r, 10);
 
+                if (hCell.Value.IsNumber && Convert.ToDecimal(hCell.Value.GetNumber()) > 0)
+                {
+                    targetRow = r;
+                    targetAmount = Convert.ToDecimal(hCell.Value.GetNumber());
+                    isActualCharge = true;
+                    break;
+                }
                 if (iCell.Value.IsNumber && Convert.ToDecimal(iCell.Value.GetNumber()) > 0)
                 {
                     targetRow = r;
                     targetAmount = Convert.ToDecimal(iCell.Value.GetNumber());
-                    isActualCharge = true;
-                    break;
-                }
-                if (jCell.Value.IsNumber && Convert.ToDecimal(jCell.Value.GetNumber()) > 0)
-                {
-                    targetRow = r;
-                    targetAmount = Convert.ToDecimal(jCell.Value.GetNumber());
                     isActualCharge = false;
                     break;
                 }
@@ -213,43 +213,43 @@ public class ProfileInvoiceExcelViewTests
         Assert.True(targetRow > 0, "Expected at least one row with positive amount");
 
         // Set Include to 0 on target row and recalculate formulas
-        ws.Cell(targetRow, 1).SetValue(0);
+        ws.Cell(targetRow, 10).SetValue(0);
         wb.RecalculateAllFormulas();
 
+        decimal newValH3 = Convert.ToDecimal(ws.Cell(3, 8).Value.GetNumber());
         decimal newValI3 = Convert.ToDecimal(ws.Cell(3, 9).Value.GetNumber());
-        decimal newValJ3 = Convert.ToDecimal(ws.Cell(3, 10).Value.GetNumber());
-        decimal newValJ1 = Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber());
+        decimal newValI1 = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
 
         if (isActualCharge)
         {
-            Assert.Equal(valI3 - targetAmount, newValI3);
+            Assert.Equal(valH3 - targetAmount, newValH3);
         }
         else
         {
-            Assert.Equal(valJ3 - targetAmount, newValJ3);
+            Assert.Equal(valI3 - targetAmount, newValI3);
         }
-        Assert.Equal(valJ1 - targetAmount, newValJ1);
+        Assert.Equal(valI1 - targetAmount, newValI1);
 
         _output.WriteLine($"Live formula test PASS: Target row {targetRow} changed 1->0, amount {targetAmount} subtracted from totals.");
-        _output.WriteLine($"Old Total: {valJ1}, New Total: {newValJ1}");
+        _output.WriteLine($"Old Total: {valI1}, New Total: {newValI1}");
 
         // Reset targetRow Include back to 1
-        ws.Cell(targetRow, 1).SetValue(1);
+        ws.Cell(targetRow, 10).SetValue(1);
 
         // 5. Test 5 Real Rows with Agreed Rate modification in Excel (+1000 each cumulatively -> Total Invoice +5000)
         _output.WriteLine("\n=== 5 REAL ROWS RATE CHANGE CUMULATIVE (+5000) VERIFICATION (Owner 5, SEP26) ===");
         var headerRows = new List<(int ExcelRow, string ProjName, decimal OriginalRate, decimal OriginalActual)>();
         for (int r = 5; r <= lastRow; r++)
         {
-            if (ws.Cell(r, 7).Value.IsNumber && ws.Cell(r, 9).HasFormula)
+            if (ws.Cell(r, 6).Value.IsNumber && ws.Cell(r, 8).HasFormula)
             {
-                decimal origRate = Convert.ToDecimal(ws.Cell(r, 7).Value.GetNumber());
+                decimal origRate = Convert.ToDecimal(ws.Cell(r, 6).Value.GetNumber());
                 if (origRate > 0)
                 {
-                    decimal origActual = Convert.ToDecimal(ws.Cell(r, 9).Value.GetNumber());
+                    decimal origActual = Convert.ToDecimal(ws.Cell(r, 8).Value.GetNumber());
                     if (origActual == origRate)
                     {
-                        string pName = ws.Cell(r, 5).GetString();
+                        string pName = ws.Cell(r, 4).GetString();
                         headerRows.Add((r, pName, origRate, origActual));
                         if (headerRows.Count >= 5) break;
                     }
@@ -259,7 +259,7 @@ public class ProfileInvoiceExcelViewTests
 
         Assert.True(headerRows.Count >= 5, $"Expected at least 5 project header rows with rates, found {headerRows.Count}");
 
-        decimal runningTotalBefore = valJ1;
+        decimal runningTotalBefore = valI1;
         _output.WriteLine("| Step | Excel Row | Project Name | Before Rate | After Rate (+1000) | Before Actual | After Actual | Before Total | After Total | Total Delta |");
         _output.WriteLine("|:---:|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|");
 
@@ -267,14 +267,14 @@ public class ProfileInvoiceExcelViewTests
         foreach (var hr in headerRows)
         {
             // Ensure Include = 1
-            ws.Cell(hr.ExcelRow, 1).SetValue(1);
+            ws.Cell(hr.ExcelRow, 10).SetValue(1);
             decimal testNewRate = hr.OriginalRate + 1000m;
-            ws.Cell(hr.ExcelRow, 7).SetValue(testNewRate);
+            ws.Cell(hr.ExcelRow, 6).SetValue(testNewRate);
 
             wb.RecalculateAllFormulas();
 
-            decimal newActual = Convert.ToDecimal(ws.Cell(hr.ExcelRow, 9).Value.GetNumber());
-            decimal currentTotalInvoice = Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber());
+            decimal newActual = Convert.ToDecimal(ws.Cell(hr.ExcelRow, 8).Value.GetNumber());
+            decimal currentTotalInvoice = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
             decimal stepDelta = currentTotalInvoice - runningTotalBefore;
 
             _output.WriteLine($"| {step} | Row {hr.ExcelRow} | {hr.ProjName} | ${hr.OriginalRate:N0} | ${testNewRate:N0} | ${hr.OriginalActual:N0} | ${newActual:N0} | ${runningTotalBefore:N0} | ${currentTotalInvoice:N0} | +${stepDelta:N0} |");
@@ -283,19 +283,19 @@ public class ProfileInvoiceExcelViewTests
             step++;
         }
 
-        decimal finalCumulativeTotal = Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber());
-        decimal totalIncrease = finalCumulativeTotal - valJ1;
-        _output.WriteLine($"\nAll 5 rows modified simultaneously: Initial Total = {valJ1}, Final Total = {finalCumulativeTotal}, Total Increase = +{totalIncrease}");
+        decimal finalCumulativeTotal = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
+        decimal totalIncrease = finalCumulativeTotal - valI1;
+        _output.WriteLine($"\nAll 5 rows modified simultaneously: Initial Total = {valI1}, Final Total = {finalCumulativeTotal}, Total Increase = +{totalIncrease}");
         Assert.Equal(5000m, totalIncrease);
-        Assert.Equal(valJ1 + 5000m, finalCumulativeTotal);
+        Assert.Equal(valI1 + 5000m, finalCumulativeTotal);
 
         // Revert all 5 rows for clean state
         foreach (var hr in headerRows)
         {
-            ws.Cell(hr.ExcelRow, 7).SetValue(hr.OriginalRate);
+            ws.Cell(hr.ExcelRow, 6).SetValue(hr.OriginalRate);
         }
         wb.RecalculateAllFormulas();
-        decimal restoredTotal = Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber());
+        decimal restoredTotal = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
         Assert.Equal(view.TotalInvoice, restoredTotal);
         _output.WriteLine($"All 5 rows reverted. Restored Total Invoice: {restoredTotal} == {view.TotalInvoice} (MATCH)\n");
     }
@@ -309,8 +309,15 @@ public class ProfileInvoiceExcelViewTests
         using var db = new InvoicingDbContext(options);
         var service = new ProfileInvoicingService(db);
 
-        // Toggle row 1624 (Owner 5, SEP26)
-        long code = 1624;
+        // Get an existing valid row from DB
+        long code = 0;
+        using (var conn = new SqlConnection(ConnStr))
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT TOP 1 cmp_prof_invoice_code FROM dbo.Profile_invoicing WHERE is_processed = 0 ORDER BY cmp_prof_invoice_code ASC";
+            code = Convert.ToInt64(await cmd.ExecuteScalarAsync());
+        }
         var res = await service.UpdateRowAsync(code, new ProfileInvoiceRowUpdateRequest
         {
             IsIncluded = false
@@ -352,7 +359,14 @@ public class ProfileInvoiceExcelViewTests
         using var db = new InvoicingDbContext(options);
         var service = new ProfileInvoicingService(db);
 
-        long code = 1624;
+        long code = 0;
+        using (var conn = new SqlConnection(ConnStr))
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT TOP 1 cmp_prof_invoice_code FROM dbo.Profile_invoicing WHERE is_processed = 0 ORDER BY cmp_prof_invoice_code ASC";
+            code = Convert.ToInt64(await cmd.ExecuteScalarAsync());
+        }
         string currRemarks = "";
         bool currIncluded = true;
         string currStatus = "P";
@@ -474,9 +488,9 @@ public class ProfileInvoiceExcelViewTests
         using var wb = new ClosedXML.Excel.XLWorkbook(ms);
         var ws = wb.Worksheet(1);
 
-        // Total Invoice formula in J1
-        Assert.Contains("I3 + J3", ws.Cell(1, 10).FormulaA1);
-        Assert.Equal(view.TotalInvoice, Convert.ToDecimal(ws.Cell(1, 10).Value.GetNumber()));
+        // Total Invoice formula in I1
+        Assert.Contains("H3 + I3", ws.Cell(1, 9).FormulaA1);
+        Assert.Equal(view.TotalInvoice, Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber()));
 
         _output.WriteLine($"Foreign Branch Test PASSED: Total = {view.TotalInvoice}, Foreign row {foreignRow.ProjectName} IsForeign = {foreignRow.IsForeign}, Non-foreign {nonForeignRow.ProjectName} IsForeign = {nonForeignRow.IsForeign}");
     }
