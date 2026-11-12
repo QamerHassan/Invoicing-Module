@@ -33,6 +33,7 @@ interface ProfileInvoiceExcelViewProps {
   onMonthChange?: (month: string) => void;
   onOwnerChange?: (ownerCode: number | '') => void;
   initialExcelTab?: 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed';
+  lockedOwnerName?: string; // NEW: if set, owner is locked from parent
 }
 
 export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = ({
@@ -41,7 +42,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   initialMonth = 'SEP26',
   onMonthChange,
   onOwnerChange,
-  initialExcelTab
+  initialExcelTab,
+  lockedOwnerName = '',  // NEW
 }) => {
   const [selectedOwnerCode, setSelectedOwnerCode] = useState<number | ''>(initialOwnerCode);
   const [monthYear, setMonthYear] = useState<string>(initialMonth.replace('-', '').toUpperCase());
@@ -78,6 +80,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   // Owners fetched fresh from posted-group-owners endpoint
   const [postedOwners, setPostedOwners] = useState<ProfileGroupOwnerDto[]>([]);
   const [ownersLoading, setOwnersLoading] = useState<boolean>(false);
+  const [allOwners, setAllOwners] = useState<ProfileGroupOwnerDto[]>([]);
 
   // KAAM 4: Available months from backend
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
@@ -167,6 +170,13 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [initialOwnerCode]);
 
+  // Sync locked owner from parent
+  useEffect(() => {
+    if (lockedOwnerName && initialOwnerCode !== '') {
+      setSelectedOwnerCode(initialOwnerCode);
+    }
+  }, [lockedOwnerName, initialOwnerCode]);
+
   // Sync initialExcelTab from parent navigation
   useEffect(() => {
     if (initialExcelTab) {
@@ -174,31 +184,35 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [initialExcelTab]);
 
-  // Fetch posted owners whenever month changes (or on mount)
-  const fetchPostedOwners = useCallback(async (month: string) => {
-    setOwnersLoading(true);
-    try {
-      const owners = await api.getPostedGroupOwners(month || undefined);
-      setPostedOwners(owners);
-      // Preserve current selection if non-empty; only default to owners[0] when empty
-      setSelectedOwnerCode(prev => {
-        if (prev === '') {
-          return owners.length > 0 ? owners[0].prfOwnCode : '';
-        }
-        return prev;
-      });
-    } catch (err) {
-      console.error('Failed to load posted group owners', err);
-      setPostedOwners([]);
-    } finally {
-      setOwnersLoading(false);
-    }
-  }, []);
-
-  // Load posted owners when month changes
+  // Fetch all owners (for unlocked dropdown) + posted owners (for sub-tabs) whenever month changes
   useEffect(() => {
-    fetchPostedOwners(cleanMonth);
-  }, [cleanMonth, fetchPostedOwners]);
+    const fetchOwners = async () => {
+      setOwnersLoading(true);
+      try {
+        // Always fetch posted owners (used by sub-tabs)
+        const posted = await api.getPostedGroupOwners(cleanMonth || undefined);
+        setPostedOwners(posted);
+
+        // If NOT locked: also fetch all owners for the dropdown
+        if (!lockedOwnerName) {
+          const all = await api.getProfileGroupOwners();
+          setAllOwners(all);
+          // Default selection when unlocked: preserve existing or pick nothing
+          setSelectedOwnerCode(prev => {
+            if (prev !== '') return prev;
+            return '';  // Don't auto-select; show "Select Owner..."
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load group owners', err);
+        setPostedOwners([]);
+        setAllOwners([]);
+      } finally {
+        setOwnersLoading(false);
+      }
+    };
+    fetchOwners();
+  }, [cleanMonth, lockedOwnerName]);
 
   const skipAutoLoadRef = useRef<boolean>(false);
 
@@ -982,15 +996,45 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 Owner:
               </span>
               <div style={{ width: '200px' }}>
-                <OwnerSearchSelect
-                  owners={postedOwners}
-                  value={selectedOwnerCode}
-                  onChange={(val) => setSelectedOwnerCode(val)}
-                  allowAll={false}
-                  placeholder={ownersLoading ? 'Loading...' : postedOwners.length === 0 ? 'No posted invoices' : 'Select Owner...'}
-                  emptyMessage={postedOwners.length === 0 ? 'No posted invoices' : 'No owners found'}
-                  compact={true}
-                />
+                {lockedOwnerName ? (
+                  <div
+                    title="Owner Profile Invoicing page se badlein"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      padding: '2px 8px',
+                      height: '24px',
+                      background: 'rgba(99,102,241,0.12)',
+                      border: '1px solid rgba(99,102,241,0.4)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#6366f1',
+                      cursor: 'default',
+                      userSelect: 'none',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: '200px'
+                    }}
+                  >
+                    🔒 {lockedOwnerName}
+                  </div>
+                ) : (
+                  <OwnerSearchSelect
+                    owners={allOwners}
+                    value={selectedOwnerCode}
+                    onChange={(val) => {
+                      setSelectedOwnerCode(val);
+                      if (onOwnerChange) onOwnerChange(val);
+                    }}
+                    allowAll={false}
+                    placeholder={ownersLoading ? 'Loading...' : allOwners.length === 0 ? 'Loading owners...' : 'Select Owner...'}
+                    emptyMessage={allOwners.length === 0 ? 'Loading owners...' : 'No owners found'}
+                    compact={true}
+                  />
+                )}
               </div>
 
               <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '0.2rem' }}>
@@ -1457,7 +1501,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               {!data || data.rows.length === 0 ? (
                 <tr>
                   <td colSpan={16} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                    {loading ? 'Loading Excel view...' : 'No saved invoice rows found for this Group Owner and Month.'}
+                    {loading ? 'Loading Excel view...' : data && data.totalSavedRows === 0 && lockedOwnerName
+                      ? `No saved rows for ${lockedOwnerName} in ${cleanMonth}. Profile Invoicing mein Save & Post karein.`
+                      : 'No saved invoice rows found for this Group Owner and Month.'}
                   </td>
                 </tr>
               ) : (

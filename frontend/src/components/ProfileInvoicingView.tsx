@@ -76,6 +76,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
 }) => {
   const [groupOwners, setGroupOwners] = useState<ProfileGroupOwnerDto[]>([]);
   const [selectedOwnerCode, setSelectedOwnerCode] = useState<number | ''>('');
+  const [selectedOwnerName, setSelectedOwnerName] = useState<string>('');
   const [monthYear, setMonthYear] = useState<string>(initialMonth.replace('-', '').toUpperCase());
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [monthsLoading, setMonthsLoading] = useState<boolean>(false);
@@ -193,6 +194,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
         setGroupOwners(owners);
         if (owners.length > 0 && !selectedOwnerCode) {
           setSelectedOwnerCode(owners[0].prfOwnCode);
+          setSelectedOwnerName(owners[0].profileName ?? '');
         }
       } catch (err: any) {
         console.error('Failed to load profile group owners', err);
@@ -556,6 +558,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
           }}
           onOwnerChange={setSelectedOwnerCode}
           initialExcelTab={initialExcelTab}
+          lockedOwnerName={selectedOwnerName}
         />
       ) : (
         <>
@@ -577,7 +580,11 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                 <OwnerSearchSelect
                   owners={groupOwners}
                   value={selectedOwnerCode}
-                  onChange={(val) => setSelectedOwnerCode(val)}
+                  onChange={(val) => {
+                    setSelectedOwnerCode(val);
+                    const owner = groupOwners.find(o => o.prfOwnCode === val);
+                    setSelectedOwnerName(owner?.profileName ?? '');
+                  }}
                   allowAll={false}
                   placeholder="Select Profile Group Owner..."
                 />
