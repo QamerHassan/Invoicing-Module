@@ -44,16 +44,21 @@ function getAuthHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Retry fetch with exponential backoff for transient network errors
-async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
+// Retry fetch with exponential backoff for transient network errors and container cold starts
+async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 3): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, options);
+      // CloudFront / Back4App returns 502/503/504 while waking container from sleep
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
       return res;
     } catch (err) {
       if (attempt === retries) throw err;
-      // Wait 1s, then 2s before retrying
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      // Wait 1.5s, then 3s, then 4.5s before retrying
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
     }
   }
   throw new Error('Network request failed after retries');
@@ -63,6 +68,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 401) {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    lookupCache.clear();
     window.dispatchEvent(new Event('auth-unauthorized'));
     throw new Error('Session expired or unauthorized. Please log in again.');
   }
@@ -82,9 +88,27 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return (isJson ? await response.json() : null) as T;
 }
 
+// Fast client-side cache for static lookups (3-5 min TTL) to make navigation instantaneous
+const lookupCache = new Map<string, { data: any; expiry: number }>();
+
+async function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  const hit = lookupCache.get(key);
+  if (hit && hit.expiry > Date.now()) {
+    return hit.data as T;
+  }
+  const result = await fetcher();
+  lookupCache.set(key, { data: result, expiry: Date.now() + ttlMs });
+  return result;
+}
+
+export function clearLookupCache(): void {
+  lookupCache.clear();
+}
+
 export const api = {
   // Auth
   async login(username: string, password: string): Promise<AuthResponse> {
+    lookupCache.clear();
     const res = await fetchWithRetry(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,22 +127,26 @@ export const api = {
   },
 
   async getBillingMonths(): Promise<string[]> {
-    const res = await fetchWithRetry(`${BASE_URL}/api/dashboard/billing-months`, {
-      headers: { ...getAuthHeader() }
+    return getCached('billingMonths', 180000, async () => {
+      const res = await fetchWithRetry(`${BASE_URL}/api/dashboard/billing-months`, {
+        headers: { ...getAuthHeader() }
+      });
+      return handleResponse<string[]>(res);
     });
-    return handleResponse<string[]>(res);
   },
 
   // Lookups
   async getVendors(): Promise<VendorDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/vendors`, {
-      headers: { ...getAuthHeader() }
+    return getCached('vendors', 300000, async () => {
+      const res = await fetchWithRetry(`${BASE_URL}/api/lookups/vendors`, {
+        headers: { ...getAuthHeader() }
+      });
+      return handleResponse<VendorDto[]>(res);
     });
-    return handleResponse<VendorDto[]>(res);
   },
 
   async getProfileOwners(): Promise<ProfileOwnerDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/profile-owners?_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/lookups/profile-owners?_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -130,30 +158,36 @@ export const api = {
   },
 
   async getExchangeRates(): Promise<ExchangeRateDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/exchange-rates`, {
-      headers: { ...getAuthHeader() }
+    return getCached('exchangeRates', 300000, async () => {
+      const res = await fetchWithRetry(`${BASE_URL}/api/lookups/exchange-rates`, {
+        headers: { ...getAuthHeader() }
+      });
+      return handleResponse<ExchangeRateDto[]>(res);
     });
-    return handleResponse<ExchangeRateDto[]>(res);
   },
 
   async getEntities(): Promise<EntityDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/entities`, {
-      headers: { ...getAuthHeader() }
+    return getCached('entities', 300000, async () => {
+      const res = await fetchWithRetry(`${BASE_URL}/api/lookups/entities`, {
+        headers: { ...getAuthHeader() }
+      });
+      return handleResponse<EntityDto[]>(res);
     });
-    return handleResponse<EntityDto[]>(res);
   },
 
   async getProjects(): Promise<ProjectDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/projects`, {
-      headers: { ...getAuthHeader() }
+    return getCached('projects', 300000, async () => {
+      const res = await fetchWithRetry(`${BASE_URL}/api/lookups/projects`, {
+        headers: { ...getAuthHeader() }
+      });
+      return handleResponse<ProjectDto[]>(res);
     });
-    return handleResponse<ProjectDto[]>(res);
   },
 
   // Company Invoicing
   async getProfileProjects(profileOwnerId?: number): Promise<ProfileProjectDto[]> {
     const query = profileOwnerId ? `?profileOwnerId=${profileOwnerId}` : '';
-    const res = await fetch(`${BASE_URL}/api/company-invoices/profile-projects${query}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/company-invoices/profile-projects${query}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<ProfileProjectDto[]>(res);
@@ -161,14 +195,14 @@ export const api = {
 
   async getCompanyInvoices(monthYear?: string): Promise<CompanyInvoiceDto[]> {
     const query = monthYear ? `?monthYear=${encodeURIComponent(monthYear)}` : '';
-    const res = await fetch(`${BASE_URL}/api/company-invoices${query}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/company-invoices${query}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<CompanyInvoiceDto[]>(res);
   },
 
   async calculateInvoices(req: CalculateInvoiceRequest): Promise<CalculationResultDto> {
-    const res = await fetch(`${BASE_URL}/api/company-invoices/calculate`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/company-invoices/calculate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -190,7 +224,7 @@ export const api = {
   },
 
   async postInvoices(monthYear: string): Promise<{ success: boolean; message: string; postedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/company-invoices/post?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/company-invoices/post?monthYear=${encodeURIComponent(monthYear)}`, {
       method: 'POST',
       headers: { ...getAuthHeader() }
     });
@@ -198,7 +232,7 @@ export const api = {
   },
 
   async exportCompanyInvoicesExcel(monthYear: string): Promise<Blob> {
-    const res = await fetch(`${BASE_URL}/api/company-invoices/export-excel?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/company-invoices/export-excel?monthYear=${encodeURIComponent(monthYear)}`, {
       headers: { ...getAuthHeader() }
     });
     if (!res.ok) {
@@ -211,14 +245,14 @@ export const api = {
   // Advance Funds
   async getAdvanceFunds(monthYear?: string): Promise<AdvanceFundDto[]> {
     const query = monthYear ? `?monthYear=${encodeURIComponent(monthYear)}` : '';
-    const res = await fetch(`${BASE_URL}/api/advance-funds${query}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/advance-funds${query}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<AdvanceFundDto[]>(res);
   },
 
   async createAdvanceFund(dto: CreateAdvanceFundDto): Promise<AdvanceFundDto> {
-    const res = await fetch(`${BASE_URL}/api/advance-funds`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/advance-funds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -230,7 +264,7 @@ export const api = {
   },
 
   async deleteAdvanceFund(invoiceCode: number, monthYear: string): Promise<boolean> {
-    const res = await fetch(`${BASE_URL}/api/advance-funds/${invoiceCode}?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/advance-funds/${invoiceCode}?monthYear=${encodeURIComponent(monthYear)}`, {
       method: 'DELETE',
       headers: { ...getAuthHeader() }
     });
@@ -239,7 +273,7 @@ export const api = {
 
   // Final Invoicing
   async getFinalInvoicePreview(monthYear: string): Promise<FinalInvoiceCalculationResult> {
-    const res = await fetch(`${BASE_URL}/api/final-invoice/preview?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/final-invoice/preview?monthYear=${encodeURIComponent(monthYear)}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<FinalInvoiceCalculationResult>(res);
@@ -247,7 +281,7 @@ export const api = {
 
   async getFinalInvoice(monthYear: string): Promise<FinalInvoiceDto | null> {
     const query = monthYear ? `?monthYear=${encodeURIComponent(monthYear)}` : '';
-    const res = await fetch(`${BASE_URL}/api/final-invoice${query}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/final-invoice${query}`, {
       headers: { ...getAuthHeader() }
     });
     if (res.status === 404) return null;
@@ -256,7 +290,7 @@ export const api = {
 
   async getFinalInvoices(monthYear?: string): Promise<FinalInvoiceDto[]> {
     const query = monthYear ? `?monthYear=${encodeURIComponent(monthYear)}` : '';
-    const res = await fetch(`${BASE_URL}/api/final-invoice${query}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/final-invoice${query}`, {
       headers: { ...getAuthHeader() }
     });
     if (res.status === 404) return [];
@@ -266,7 +300,7 @@ export const api = {
   },
 
   async saveFinalInvoice(monthYear: string): Promise<FinalInvoiceDto> {
-    const res = await fetch(`${BASE_URL}/api/final-invoice/save?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/final-invoice/save?monthYear=${encodeURIComponent(monthYear)}`, {
       method: 'POST',
       headers: { ...getAuthHeader() }
     });
@@ -275,7 +309,7 @@ export const api = {
 
   // PDF & Print
   async downloadFinalInvoicePdf(monthYear: string): Promise<Blob> {
-    const res = await fetch(`${BASE_URL}/api/pdf/final-invoice?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/pdf/final-invoice?monthYear=${encodeURIComponent(monthYear)}`, {
       headers: { ...getAuthHeader() }
     });
     if (!res.ok) {
@@ -286,7 +320,7 @@ export const api = {
   },
 
   async getPrintData(monthYear: string): Promise<FinalInvoicePrintDto> {
-    const res = await fetch(`${BASE_URL}/api/pdf/final-invoice/print-data?monthYear=${encodeURIComponent(monthYear)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/pdf/final-invoice/print-data?monthYear=${encodeURIComponent(monthYear)}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<FinalInvoicePrintDto>(res);
@@ -294,7 +328,7 @@ export const api = {
 
   // Profile Invoicing
   async getProfileGroupOwners(): Promise<ProfileGroupOwnerDto[]> {
-    const res = await fetch(`${BASE_URL}/api/lookups/profile-group-owners?_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/lookups/profile-group-owners?_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -307,7 +341,7 @@ export const api = {
 
   async getPostedGroupOwners(month?: string): Promise<ProfileGroupOwnerDto[]> {
     const monthParam = month ? `&month=${encodeURIComponent(month)}` : '';
-    const res = await fetch(`${BASE_URL}/api/lookups/posted-group-owners?_t=${Date.now()}${monthParam}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/lookups/posted-group-owners?_t=${Date.now()}${monthParam}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -319,7 +353,7 @@ export const api = {
   },
 
   async getProfileInvoiceDryRun(groupOwnerCode: number, month: string): Promise<ProfileInvoiceDryRunResult> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/calculate-dry-run?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/calculate-dry-run?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -331,7 +365,7 @@ export const api = {
   },
 
   async getSavedProfileInvoices(groupOwnerCode: number, monthYear: string): Promise<ProfileInvoiceRowDto[]> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices?groupOwnerCode=${groupOwnerCode}&monthYear=${encodeURIComponent(monthYear)}&_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices?groupOwnerCode=${groupOwnerCode}&monthYear=${encodeURIComponent(monthYear)}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -343,7 +377,7 @@ export const api = {
   },
 
   async saveProfileInvoices(request: ProfileInvoiceSaveRequest): Promise<ProfileInvoiceSaveResult> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/save`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/save`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -355,7 +389,7 @@ export const api = {
   },
 
   async updateProfileInvoiceRow(cmpProfInvoiceCode: number, request: ProfileInvoiceRowUpdateRequest): Promise<ProfileInvoiceRowUpdateResponse> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/${cmpProfInvoiceCode}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/${cmpProfInvoiceCode}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -367,7 +401,7 @@ export const api = {
   },
 
   async updateProfileInvoiceProject(projectCode: number, request: ProfileInvoiceProjectUpdateRequest): Promise<ProfileInvoiceRowUpdateResponse> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/project/${projectCode}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/project/${projectCode}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -379,7 +413,7 @@ export const api = {
   },
 
   async checkProfileMonthFinalized(month: string): Promise<{ month: string; isFinalized: boolean }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/is-finalized?month=${encodeURIComponent(month)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/is-finalized?month=${encodeURIComponent(month)}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<{ month: string; isFinalized: boolean }>(res);
@@ -387,7 +421,7 @@ export const api = {
 
   async getInvoicedMonths(ownerCode?: number): Promise<string[]> {
     const ownerParam = ownerCode && ownerCode > 0 ? `?ownerCode=${ownerCode}` : '';
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/months${ownerParam}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/months${ownerParam}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -398,14 +432,14 @@ export const api = {
   },
 
   async getProfileInvoiceExcelView(groupOwnerCode: number, month: string): Promise<ProfileInvoiceExcelViewResult> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/excel-view?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/excel-view?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<ProfileInvoiceExcelViewResult>(res);
   },
 
   async downloadProfileInvoiceExcel(groupOwnerCode: number, month: string, processedOnly: boolean = false, excludeToBeDiscussed: boolean = false): Promise<Blob> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/excel-download?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&processedOnly=${processedOnly}&excludeToBeDiscussed=${excludeToBeDiscussed}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/excel-download?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&processedOnly=${processedOnly}&excludeToBeDiscussed=${excludeToBeDiscussed}`, {
       headers: { ...getAuthHeader() }
     });
     if (!res.ok) {
@@ -416,7 +450,7 @@ export const api = {
   },
 
   async sendProfileInvoiceEmail(request: SendProfileInvoiceEmailRequest): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/send-email`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/send-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -430,7 +464,7 @@ export const api = {
   async getProcessedInvoices(groupOwnerCode?: number, monthYear: string = 'SEP26'): Promise<ProfileInvoiceProcessedRowDto[]> {
     const encoded = encodeURIComponent(monthYear || 'SEP26');
     const grpParam = groupOwnerCode && groupOwnerCode > 0 ? `&groupOwnerCode=${groupOwnerCode}&ownerCode=${groupOwnerCode}` : '';
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/processed?month=${encoded}&monthYear=${encoded}${grpParam}&_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/processed?month=${encoded}&monthYear=${encoded}${grpParam}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -449,7 +483,7 @@ export const api = {
     unprocessedCount: number;
     unprocessedUsd: number;
   }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/owner-unprocessed-status?ownerCode=${ownerCode}&month=${encodeURIComponent(month)}&_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/owner-unprocessed-status?ownerCode=${ownerCode}&month=${encodeURIComponent(month)}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -462,7 +496,7 @@ export const api = {
 
   async getUnprocessedInvoices(monthYear: string = 'SEP26'): Promise<ProfileInvoiceUnprocessedResult> {
     const encoded = encodeURIComponent(monthYear || 'SEP26');
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/unprocessed?month=${encoded}&monthYear=${encoded}&_t=${Date.now()}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/unprocessed?month=${encoded}&monthYear=${encoded}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),
@@ -475,7 +509,7 @@ export const api = {
 
   async getSystemDbInfo(): Promise<{ connected: boolean; server?: string; database?: string }> {
     try {
-      const res = await fetch(`${BASE_URL}/api/system/db-info?_t=${Date.now()}`, {
+      const res = await fetchWithRetry(`${BASE_URL}/api/system/db-info?_t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -493,14 +527,14 @@ export const api = {
 
   // Email Settings (per-user saved sender settings)
   async getEmailSettings(): Promise<UserEmailSettingsDto> {
-    const res = await fetch(`${BASE_URL}/api/email-settings`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/email-settings`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<UserEmailSettingsDto>(res);
   },
 
   async saveEmailSettings(senderEmail: string, appPassword: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${BASE_URL}/api/email-settings`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/email-settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ senderEmail, appPassword })
@@ -509,7 +543,7 @@ export const api = {
   },
 
   async deleteEmailSettings(): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${BASE_URL}/api/email-settings`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/email-settings`, {
       method: 'DELETE',
       headers: { ...getAuthHeader() }
     });
@@ -522,7 +556,7 @@ export const api = {
     if (month) params.append('month', month);
     if (groupOwnerCode) params.append('groupOwnerCode', String(groupOwnerCode));
     if (code) params.append('code', String(code));
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/audit-logs?${params}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/audit-logs?${params}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<import('../types').ProfileInvoiceAuditLogDto[]>(res);
@@ -532,14 +566,14 @@ export const api = {
   async getToBeDiscussed(month: string, groupOwnerCode?: number): Promise<import('../types').ProfileInvoiceDiscussedRowDto[]> {
     const params = new URLSearchParams({ month });
     if (groupOwnerCode) params.append('groupOwnerCode', String(groupOwnerCode));
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/to-be-discussed?${params}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/to-be-discussed?${params}`, {
       headers: { ...getAuthHeader() }
     });
     return handleResponse<import('../types').ProfileInvoiceDiscussedRowDto[]>(res);
   },
 
   async addToBeDiscussed(codes: number[], note?: string): Promise<{ success: boolean; message: string; updatedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/to-be-discussed`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/to-be-discussed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ codes, note })
@@ -548,7 +582,7 @@ export const api = {
   },
 
   async removeFromToBeDiscussed(codes: number[]): Promise<{ success: boolean; message: string; updatedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/to-be-discussed`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/to-be-discussed`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ codes })
@@ -557,7 +591,7 @@ export const api = {
   },
 
   async updateDiscussNote(code: number, note?: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/to-be-discussed/${code}/note`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/to-be-discussed/${code}/note`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ note })
@@ -566,7 +600,7 @@ export const api = {
   },
 
   async processInvoices(codes: number[]): Promise<{ success: boolean; message: string; updatedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/process`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ codes })
@@ -575,7 +609,7 @@ export const api = {
   },
 
   async unprocessInvoices(codes: number[]): Promise<{ success: boolean; message: string; updatedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/process`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/process`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ codes })
@@ -584,7 +618,7 @@ export const api = {
   },
 
   async processInvoicesByOwner(prfownCodes: number[], month: string): Promise<{ success: boolean; message: string; updatedCount: number }> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/process-by-owner`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/process-by-owner`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ prfownCodes, month })
@@ -593,7 +627,7 @@ export const api = {
   },
 
   async generateAndOpenProfileInvoices(prfownCode: number, month: string): Promise<ProfileInvoiceGenerateOpenResult> {
-    const res = await fetch(`${BASE_URL}/api/profile-invoices/generate-open`, {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/generate-open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ prfownCode, month })
