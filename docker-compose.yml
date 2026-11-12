@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - ConnectionStrings__InvoicingDb=Server=rizviz-db.c9o28ky2q7ah.ap-southeast-2.rds.amazonaws.com,1433;Database=Invoicing_System;User Id=admin;Password=Rizviz5121472;TrustServerCertificate=True;MultipleActiveResultSets=True;
+      - Jwt__Key=super_secret_enterprise_grade_key_must_be_32_bytes_long_min!
+      - ASPNETCORE_HTTP_PORTS=10000
+      - ASPNETCORE_URLS=http://+:10000
+    expose:
+      - "10000"
+
+  caddy:
+    image: caddy:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-13.211.80.94.sslip.io}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    command: sh -c "caddy reverse-proxy --from $${DOMAIN:-13.211.80.94.sslip.io} --to backend:10000"
+
+volumes:
+  caddy_data:
+  caddy_config:
