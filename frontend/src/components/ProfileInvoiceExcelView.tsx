@@ -99,6 +99,32 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   // Runtime Auto-Save state
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+  // Identifies heads that must start UNCHECKED by default (Job Holder, Support, Rizviz Share)
+  const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
+    if (!serviceHead) return false;
+    const s = serviceHead.trim().toLowerCase();
+    return s.includes('job holder') || s.includes('support') || s.includes('rizviz share');
+  };
+
+  // Normalizes Excel view data: Job Holder, Support Provider, and Rizviz Share start unchecked by default
+  const normalizeExcelViewData = (d: ProfileInvoiceExcelViewResult | null): ProfileInvoiceExcelViewResult | null => {
+    if (!d || !d.rows) return d;
+    return {
+      ...d,
+      rows: d.rows.map(r => {
+        if (isDefaultUncheckedHead(r.serviceHead)) {
+          const hasOther = r.otherCharge != null && r.otherCharge > 0;
+          return {
+            ...r,
+            isIncluded: hasOther ? true : false,
+            otherCharge: hasOther ? r.otherCharge : null
+          };
+        }
+        return r;
+      })
+    };
+  };
+
   // Helper to compute initial selected row indices: all non-processed rows CHECKED by default,
   // except rows already marked to_be_discussed = 1 which start UNCHECKED and red.
   const computeInitialSelectedIndices = (viewData: ProfileInvoiceExcelViewResult): Set<number> => {
@@ -275,7 +301,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           }
         } catch { /* if no unbilled rows, keep freshData */ }
       }
-      setData(freshData);
+      setData(normalizeExcelViewData(freshData));
       setSelectedRowIndices(computeInitialSelectedIndices(freshData));
       setProcessMsg(null);
     } catch (err: any) {
@@ -338,7 +364,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       if (onOwnerChange) onOwnerChange(targetOwnerCode);
 
       const genData = genResult.excelView || (await api.getProfileInvoiceExcelView(targetOwnerCode, cleaned));
-      setData(genData);
+      setData(normalizeExcelViewData(genData));
       setSelectedRowIndices(computeInitialSelectedIndices(genData));
       setProcessMsg(null);
 
@@ -361,7 +387,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const resolvedCode = fallback.groupOwnerCode || prfownCode;
         setSelectedOwnerCode(resolvedCode);
         if (onOwnerChange) onOwnerChange(resolvedCode);
-        setData(fallback);
+        setData(normalizeExcelViewData(fallback));
         setSelectedRowIndices(computeInitialSelectedIndices(fallback));
         const owners = await api.getPostedGroupOwners(cleaned);
         if (fallback.groupOwnerName && !owners.some(o => o.prfOwnCode === resolvedCode)) {
@@ -377,12 +403,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [onMonthChange, onOwnerChange]);
 
-  const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
-    if (!serviceHead) return false;
-    const s = serviceHead.trim().toLowerCase();
-    return s === 'job holder' || s === 'support provider' || s === 'support' || s === 'rizviz share';
-  };
-
   const handleToggleIncluded = async (code: number, checked: boolean, rowIdx?: number) => {
     if (!checkConfirmFinalized() || !data) return;
 
@@ -391,11 +411,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     const newRows = [...data.rows];
     let targetIdx = rowIdx !== undefined && rowIdx >= 0 ? rowIdx : newRows.findIndex(r => r.cmpProfInvoiceCode === code);
     if (targetIdx >= 0) {
+      const isDefUnchecked = isDefaultUncheckedHead(newRows[targetIdx].serviceHead);
       const targetRow = { ...newRows[targetIdx], isIncluded: checked };
-      if (isDefaultUncheckedHead(targetRow.serviceHead)) {
-        if (checked && (targetRow.otherCharge == null || targetRow.otherCharge === 0)) {
-          targetRow.otherCharge = targetRow.finalUsd;
-        }
+      if (isDefUnchecked) {
+        targetRow.otherCharge = checked ? (targetRow.finalUsd || targetRow.totalCost || 0) : null;
       }
       newRows[targetIdx] = targetRow;
     }
@@ -404,14 +423,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     let newOtherSum = 0;
     for (const r of newRows) {
       if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
-      const inc = r.isIncluded !== undefined && r.isIncluded !== null
-        ? r.isIncluded
-        : (isDefaultUncheckedHead(r.serviceHead) ? false : true);
+      const isDefUnchecked = isDefaultUncheckedHead(r.serviceHead);
+      const inc = isDefUnchecked
+        ? Boolean(r.isIncluded && r.otherCharge != null && r.otherCharge > 0)
+        : (r.isIncluded !== false);
 
       if (inc) {
         if (r.otherCharge != null && r.otherCharge > 0) {
           newOtherSum += r.otherCharge;
-        } else if (isDefaultUncheckedHead(r.serviceHead) && r.finalUsd != null && r.finalUsd > 0) {
+        } else if (isDefUnchecked && r.finalUsd != null && r.finalUsd > 0) {
           newOtherSum += r.finalUsd;
         }
       }
@@ -2003,9 +2023,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         {renderEditableCell(
                           idx, 
                           'otherCharge', 
-                          (row.isIncluded !== false && (!isDefaultUncheckedHead(row.serviceHead) || row.isIncluded === true)) && row.otherCharge != null 
-                            ? `$${row.otherCharge.toLocaleString()}` 
-                            : '', 
+                          isDefaultUncheckedHead(row.serviceHead)
+                            ? (row.isIncluded && row.otherCharge != null && row.otherCharge > 0 ? `$${row.otherCharge.toLocaleString()}` : '')
+                            : (row.isIncluded !== false && row.otherCharge != null ? `$${row.otherCharge.toLocaleString()}` : ''), 
                           row.otherCharge, 
                           row.rowType, 
                           row.cmpProfInvoiceCode, 
@@ -2026,11 +2046,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                             <input
                               type="checkbox"
                               checked={
-                                row.isIncluded !== undefined && row.isIncluded !== null
-                                  ? row.isIncluded
-                                  : isDefaultUncheckedHead(row.serviceHead)
-                                  ? false
-                                  : true
+                                isDefaultUncheckedHead(row.serviceHead)
+                                  ? Boolean(row.isIncluded && row.otherCharge != null && row.otherCharge > 0)
+                                  : (row.isIncluded !== false)
                               }
                               disabled={togglingCode === (row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)))}
                               onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)), e.target.checked, idx)}
