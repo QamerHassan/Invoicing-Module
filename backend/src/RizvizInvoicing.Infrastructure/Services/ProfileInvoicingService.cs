@@ -2703,6 +2703,12 @@ public class ProfileInvoicingService : IProfileInvoicingService
         // Helper to apply row-level formulas for Other Charge (PKR to USD) in Col 9 (I)
         void ApplyOtherChargeFormula(int rowNum, ProfileInvoiceExcelViewRowDto rowDto)
         {
+            // If row is not included (is_included = 0 / false), do NOT show any value in Other Charge!
+            if (rowDto.IsIncluded == false)
+            {
+                return;
+            }
+
             bool hasPkrAndRate = rowDto.ChargedAmtPkr.HasValue && rowDto.ChargedAmtPkr.Value != 0 && rowDto.ExchangeRate.HasValue && rowDto.ExchangeRate.Value > 0;
 
             if (hasPkrAndRate)
@@ -2713,7 +2719,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
                 ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
             }
-            else if (rowDto.OtherCharge.HasValue)
+            else if (rowDto.OtherCharge.HasValue && rowDto.OtherCharge.Value > 0)
             {
                 ws.Cell(rowNum, 9).SetValue(rowDto.OtherCharge.Value);
                 ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
@@ -2729,33 +2735,24 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         // ── Data rows ────────────────────────────────────────────────────────────
         int currentRow = 5;
-        bool lastRowWasBlank = false;
         foreach (var r in view.Rows)
         {
             if (r.RowType == "Blank")
             {
-                if (currentRow > 5 && !lastRowWasBlank)
-                {
-                    currentRow++;
-                    lastRowWasBlank = true;
-                }
+                currentRow++;
                 continue;
             }
 
-            // Only export rows that are included (is_included = 1)
-            // Rows with is_included = 0 are NOT shown in exported Excel
-            if (r.IsIncluded == false)
-            {
-                continue;
-            }
-
-            lastRowWasBlank = false;
             bool isHeader = r.RowType == "ProjectHeader";
 
-            // Set Include flag in Column 10 (J)
-            ws.Cell(currentRow, 10).SetValue(1);
-            ws.Cell(currentRow, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-            ws.Cell(currentRow, 10).Style.NumberFormat.Format = "0";
+            // Include flag in Column 10 (J):
+            // Show 1 only for included rows; if unchecked (0), leave blank (do not show 0)
+            if (r.IsIncluded == true)
+            {
+                ws.Cell(currentRow, 10).SetValue(1);
+                ws.Cell(currentRow, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                ws.Cell(currentRow, 10).Style.NumberFormat.Format = "0";
+            }
 
             if (isHeader)
             {
