@@ -377,51 +377,93 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [onMonthChange, onOwnerChange]);
 
-  const handleToggleIncluded = async (code: number, checked: boolean) => {
-    if (!checkConfirmFinalized()) return;
+  const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
+    if (!serviceHead) return false;
+    const s = serviceHead.trim().toLowerCase();
+    return s === 'job holder' || s === 'support provider' || s === 'support' || s === 'rizviz share';
+  };
 
+  const handleToggleIncluded = async (code: number, checked: boolean, rowIdx?: number) => {
+    if (!checkConfirmFinalized() || !data) return;
+
+    // 1. Instant optimistic state update
     const prevData = data;
-    setTogglingCode(code);
-    setAutoSaveStatus('saving');
-    setError(null);
-    try {
-      const payload: ProfileInvoiceRowUpdateRequest = { isIncluded: checked };
-
-      // Bundle active cell edit on this row if any
-      if (editingCell && editingCell.code === code) {
-        const val = parseFloat(editingCell.value);
-        if (!isNaN(val)) {
-          if (editingCell.field === 'finalUsd' || editingCell.field === 'otherCharge') {
-            payload.chargedAmtUsd = val;
-            payload.totalCost = val;
-          } else if (editingCell.field === 'totalCost') {
-            payload.totalCost = val;
-          } else if (editingCell.field === 'agreedRate') {
-            payload.agreedRate = val;
-          }
-        } else if (editingCell.field === 'serviceHead') {
-          payload.remarks = editingCell.value;
+    const newRows = [...data.rows];
+    let targetIdx = rowIdx !== undefined && rowIdx >= 0 ? rowIdx : newRows.findIndex(r => r.cmpProfInvoiceCode === code);
+    if (targetIdx >= 0) {
+      const targetRow = { ...newRows[targetIdx], isIncluded: checked };
+      if (isDefaultUncheckedHead(targetRow.serviceHead)) {
+        if (checked && (targetRow.otherCharge == null || targetRow.otherCharge === 0)) {
+          targetRow.otherCharge = targetRow.finalUsd;
         }
-        setEditingCell(null);
       }
+      newRows[targetIdx] = targetRow;
+    }
 
-      const res = await api.updateProfileInvoiceRow(code, payload);
-      if (res.excelView) {
-        setData(res.excelView);
-      } else {
-        const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-        setData(fresh);
+    // 2. Dynamic sum recalculation:
+    let newOtherSum = 0;
+    for (const r of newRows) {
+      if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
+      const inc = r.isIncluded !== undefined && r.isIncluded !== null
+        ? r.isIncluded
+        : (isDefaultUncheckedHead(r.serviceHead) ? false : true);
+
+      if (inc) {
+        if (r.otherCharge != null && r.otherCharge > 0) {
+          newOtherSum += r.otherCharge;
+        } else if (isDefaultUncheckedHead(r.serviceHead) && r.finalUsd != null && r.finalUsd > 0) {
+          newOtherSum += r.finalUsd;
+        }
       }
-      setAutoSaveStatus('saved');
-      setTimeout(() => setAutoSaveStatus('idle'), 2500);
-    } catch (err: any) {
-      console.error('Failed to update included status', err);
-      setData(prevData); // rollback on fail
-      setError(err?.message || 'Failed to update checkbox status.');
-      setAutoSaveStatus('error');
-      setTimeout(() => setAutoSaveStatus('idle'), 3500);
-    } finally {
-      setTogglingCode(null);
+    }
+
+    const newTotalInvoice = (data.actualChargesSum || 0) + newOtherSum;
+
+    setData({
+      ...data,
+      rows: newRows,
+      otherChargeSum: Math.round(newOtherSum),
+      totalInvoice: Math.round(newTotalInvoice)
+    });
+
+    // 3. Background server save if code is a real invoice record
+    if (code > 0) {
+      setTogglingCode(code);
+      setAutoSaveStatus('saving');
+      setError(null);
+      try {
+        const payload: ProfileInvoiceRowUpdateRequest = { isIncluded: checked };
+
+        // Bundle active cell edit on this row if any
+        if (editingCell && editingCell.code === code) {
+          const val = parseFloat(editingCell.value);
+          if (!isNaN(val)) {
+            if (editingCell.field === 'finalUsd' || editingCell.field === 'otherCharge') {
+              payload.chargedAmtUsd = val;
+              payload.totalCost = val;
+            } else if (editingCell.field === 'totalCost') {
+              payload.totalCost = val;
+            } else if (editingCell.field === 'agreedRate') {
+              payload.agreedRate = val;
+            }
+          } else if (editingCell.field === 'serviceHead') {
+            payload.remarks = editingCell.value;
+          }
+          setEditingCell(null);
+        }
+
+        await api.updateProfileInvoiceRow(code, payload);
+        setAutoSaveStatus('saved');
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch (err: any) {
+        console.error('Failed to update included status', err);
+        setData(prevData); // rollback on fail
+        setError(err?.message || 'Failed to update checkbox status.');
+        setAutoSaveStatus('error');
+        setTimeout(() => setAutoSaveStatus('idle'), 3500);
+      } finally {
+        setTogglingCode(null);
+      }
     }
   };
 
@@ -1725,19 +1767,24 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
                   const isDiscuss = !!(row.isToBeDiscussed || row.toBeDiscussed);
                   const isRowSelected = selectedRowIdx === idx;
-                  const rowBg = isCheckedForProcess
-                    ? isDiscuss ? 'rgba(239, 68, 68, 0.32)' : 'rgba(59, 130, 246, 0.06)'
-                    : isRowSelected
-                    ? isDiscuss ? 'rgba(239, 68, 68, 0.35)' : 'rgba(59, 130, 246, 0.15)'
-                    : isDiscuss
-                    ? 'var(--bg-discuss-row)'
-                    : row.isForeign
-                    ? 'var(--bg-foreign-row)'
-                    : isHeader
-                    ? 'rgba(99, 102, 241, 0.12)'
-                    : isStandalone
-                    ? 'rgba(245, 158, 11, 0.04)'
-                    : 'transparent';
+
+                  // Visual styling matching user requirement:
+                  // 1. Job / ProjectHeader row: Highlighted slightly like Excel (#DDEBF7 style soft blue)
+                  // 2. Heads division underneath (isDetail): PURE WHITE background (#ffffff) for crisp, proper Excel-like contrast
+                  let rowBg = '#ffffff';
+                  if (isDiscuss) {
+                    rowBg = isRowSelected ? 'rgba(239, 68, 68, 0.35)' : 'var(--bg-discuss-row, #fee2e2)';
+                  } else if (row.isForeign) {
+                    rowBg = 'var(--bg-foreign-row, #e0f2fe)';
+                  } else if (isHeader) {
+                    // Job / Project row highlighted like Excel
+                    rowBg = isRowSelected ? 'rgba(59, 130, 246, 0.22)' : 'rgba(59, 130, 246, 0.12)';
+                  } else if (isDetail) {
+                    // Heads division underneath: crisp white
+                    rowBg = isRowSelected ? 'rgba(59, 130, 246, 0.08)' : '#ffffff';
+                  } else if (isStandalone) {
+                    rowBg = isRowSelected ? 'rgba(245, 158, 11, 0.12)' : '#ffffff';
+                  }
 
                   return (
                     <tr 
@@ -1750,8 +1797,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         cursor: 'pointer',
                         outline: isRowSelected ? '2px solid #3b82f6' : undefined,
                         outlineOffset: isRowSelected ? '-1px' : undefined,
-                        borderTop: isHeader ? '2px solid rgba(99, 102, 241, 0.4)' : undefined,
-                        borderBottom: isHeader ? '2px solid rgba(99, 102, 241, 0.4)' : undefined
+                        borderTop: isHeader ? '2px solid rgba(59, 130, 246, 0.35)' : undefined,
+                        borderBottom: isHeader ? '2px solid rgba(59, 130, 246, 0.25)' : isDetail ? '1px solid var(--border-subtle, #f1f5f9)' : undefined
                       }}
                     >
                       {/* Checkbox column for batch processing */}
@@ -1956,7 +2003,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         {renderEditableCell(
                           idx, 
                           'otherCharge', 
-                          row.isIncluded !== false && row.otherCharge != null ? `$${row.otherCharge.toLocaleString()}` : '', 
+                          (row.isIncluded !== false && (!isDefaultUncheckedHead(row.serviceHead) || row.isIncluded === true)) && row.otherCharge != null 
+                            ? `$${row.otherCharge.toLocaleString()}` 
+                            : '', 
                           row.otherCharge, 
                           row.rowType, 
                           row.cmpProfInvoiceCode, 
@@ -1972,13 +2021,19 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         border: '1px solid var(--border-subtle)',
                         whiteSpace: 'nowrap'
                       }}>
-                        {(isDetail || isStandalone) && row.cmpProfInvoiceCode ? (
+                        {(isDetail || isStandalone) ? (
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                             <input
                               type="checkbox"
-                              checked={row.isIncluded ?? true}
-                              disabled={togglingCode === row.cmpProfInvoiceCode}
-                              onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode!, e.target.checked)}
+                              checked={
+                                row.isIncluded !== undefined && row.isIncluded !== null
+                                  ? row.isIncluded
+                                  : isDefaultUncheckedHead(row.serviceHead)
+                                  ? false
+                                  : true
+                              }
+                              disabled={togglingCode === (row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)))}
+                              onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)), e.target.checked, idx)}
                               title="Include in totals - click to toggle & save"
                               style={{ cursor: 'pointer', width: '14px', height: '14px' }}
                             />

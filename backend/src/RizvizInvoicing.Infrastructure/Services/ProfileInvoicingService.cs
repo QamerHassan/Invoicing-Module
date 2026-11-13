@@ -496,7 +496,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
             bool isExec = (r.ProjectCode.HasValue && projectProfileTypes.TryGetValue(r.ProjectCode.Value, out var pt) && pt == "E")
                        || (r.PrfownCode.HasValue && ownerProfileTypes.TryGetValue(r.PrfownCode.Value, out var ot) && ot == "E");
             r.IsExecutive = isExec;
-            r.IsIncluded = true; // All rows default checked (true) matching PB
+            bool isDefaultUnchecked = string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(r.ResourceType, "SP", StringComparison.OrdinalIgnoreCase);
+            r.IsIncluded = !isDefaultUnchecked; // JH and SP default unchecked; others default checked
         }
 
         // Use total_usd_cost (PB's "Total Cost" measure) — NOT charged_amt_usd.
@@ -1837,7 +1839,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmd.CommandText = $@"
                 SELECT pi.cmp_prof_invoice_code, pi.prfown_code, pi.project_code, pi.interview_code, pi.charg_type_code,
                        pi.charged_amt_usd, pi.total_usd_cost, pi.resource_type, pi.invoice_to,
-                       ISNULL(pi.is_included, 1) AS is_included,
+                       CASE WHEN RTRIM(ISNULL(pi.resource_type, '')) IN ('JH', 'SP') THEN ISNULL(pi.is_included, 0) ELSE ISNULL(pi.is_included, 1) END AS is_included,
                        CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 1 ELSE 0 END AS is_executive,
                        pi.charged_amt_pkr, pi.exchange_rate, pi.share_amount,
                        ISNULL(pi.to_be_discussed, 0) AS to_be_discussed,
@@ -2438,7 +2440,16 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     isOther = false;
                 }
 
-                if (isOther && dRow.IsIncluded)
+                bool isDefaultUncheckedHead = string.Equals(resType, "JH", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(resType, "SP", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(serviceHead, "Job Holder", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(serviceHead, "Support Provider", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(serviceHead, "Support", StringComparison.OrdinalIgnoreCase);
+
+                bool rowInc = dRow.IsIncluded;
+                bool isRowOther = isOther || (isDefaultUncheckedHead && rowInc);
+
+                if (isRowOther && rowInc)
                 {
                     sumOther += finalUsd;
                 }
@@ -2449,17 +2460,17 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     {
                         RowType = "Detail",
                         CmpProfInvoiceCode = dRow.Code,
-                        IsIncluded = dRow.IsIncluded,
+                        IsIncluded = rowInc,
                         IsExecutive = dRow.IsExecutive,
                         BranchCode = curBranchCode,
                         IsForeign = (curBranchCode == ForeignBranchCode),
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
-                        OtherCharge = isOther ? finalUsd : null,
-                        ChargedAmtPkr = isOther ? dRow.ChargedAmtPkr : null,
-                        ExchangeRate = isOther ? dRow.ExchangeRate : null,
-                        ShareAmount = isOther ? dRow.ShareAmount : null,
+                        OtherCharge = isRowOther ? finalUsd : null,
+                        ChargedAmtPkr = isRowOther ? dRow.ChargedAmtPkr : null,
+                        ExchangeRate = isRowOther ? dRow.ExchangeRate : null,
+                        ShareAmount = isRowOther ? dRow.ShareAmount : null,
                         ToBeDiscussed = dRow.ToBeDiscussed,
                         IsToBeDiscussed = dRow.ToBeDiscussed,
                         IsProcessed = dRow.IsProcessed,
@@ -2473,8 +2484,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         result.Rows.Add(new ProfileInvoiceExcelViewRowDto
                         {
                             RowType = "Detail",
-                            CmpProfInvoiceCode = null,
-                            IsIncluded = projHasIncluded,
+                            CmpProfInvoiceCode = -curProj, // Assign non-null negative ID for unique UI identification
+                            IsIncluded = false, // By default uncheck
                             IsExecutive = string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase),
                             BranchCode = curBranchCode,
                             IsForeign = (curBranchCode == ForeignBranchCode),
