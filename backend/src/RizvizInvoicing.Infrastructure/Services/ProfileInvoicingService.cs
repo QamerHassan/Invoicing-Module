@@ -2719,22 +2719,41 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
                 ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
             }
+            else if (rowDto.FinalUsd.HasValue && rowDto.FinalUsd.Value > 0)
+            {
+                ws.Cell(rowNum, 9).SetValue(rowDto.FinalUsd.Value);
+                ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
+            }
         }
 
         // ── Data rows ────────────────────────────────────────────────────────────
         int currentRow = 5;
+        bool lastRowWasBlank = false;
         foreach (var r in view.Rows)
         {
             if (r.RowType == "Blank")
             {
-                currentRow++;
+                if (currentRow > 5 && !lastRowWasBlank)
+                {
+                    currentRow++;
+                    lastRowWasBlank = true;
+                }
                 continue;
             }
 
+            // Only export rows that are included (is_included = 1)
+            // Rows with is_included = 0 are NOT shown in exported Excel
+            if (r.IsIncluded == false)
+            {
+                continue;
+            }
+
+            lastRowWasBlank = false;
             bool isHeader = r.RowType == "ProjectHeader";
 
             // Set Include flag in Column 10 (J)
-            ws.Cell(currentRow, 10).SetValue(r.IsIncluded == false ? 0 : 1);
+            ws.Cell(currentRow, 10).SetValue(1);
             ws.Cell(currentRow, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             ws.Cell(currentRow, 10).Style.NumberFormat.Format = "0";
 
@@ -2838,6 +2857,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             currentRow++;
         }
+
+        int lastDataRow = Math.Max(5, currentRow - 1);
+        c3H.FormulaA1 = $"SUM(H5:H{lastDataRow})";
+        c3I.FormulaA1 = $"SUMIF(J5:J{lastDataRow}, 1, I5:I{lastDataRow})";
 
         // Recalculate all formulas so workbook opens with pre-cached evaluated values matching backend
         wb.RecalculateAllFormulas();
