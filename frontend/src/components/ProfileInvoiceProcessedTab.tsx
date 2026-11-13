@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw } from 'lucide-react';
+import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedRowDto } from '../types';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
+import { LoadingIndicator } from './LoadingIndicator';
 
 interface Props {
   groupOwners: ProfileGroupOwnerDto[];
   initialOwnerCode?: number | '';
   initialMonth?: string;
+  onRefreshUnprocessed?: () => void;
 }
 
 export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   groupOwners,
   initialOwnerCode,
   initialMonth,
+  onRefreshUnprocessed
 }) => {
   const [month, setMonth] = useState(initialMonth || '');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
@@ -22,7 +25,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [selectedCodes, setSelectedCodes] = useState<Set<number>>(new Set());
 
   // Sync with parent props
   useEffect(() => {
@@ -48,6 +52,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     try {
       const data = await api.getProcessedInvoices(ownerCode !== '' ? ownerCode : undefined, month);
       setRows(Array.isArray(data) ? data : []);
+      setSelectedCodes(new Set()); // Reset selection on reload
     } catch (err: any) {
       flashError(err?.message || 'Failed to load processed invoices.');
     } finally {
@@ -63,28 +68,79 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   const filteredRows = useMemo(() => {
     if (!search.trim()) return rows;
     const q = search.trim().toLowerCase();
-    return rows.filter(r =>
-      (r.profileName || '').toLowerCase().includes(q) ||
-      (r.projectName || '').toLowerCase().includes(q) ||
-      (r.stack || '').toLowerCase().includes(q) ||
-      (r.invoiceToName || '').toLowerCase().includes(q) ||
-      (r.invoiceMonth || '').toLowerCase().includes(q) ||
-      String(r.cmpProfInvoiceCode).includes(q)
-    );
+    const words = q.split(/\s+/).filter(Boolean);
+    return rows.filter(r => {
+      const text = `${r.profileName || ''} ${r.projectName || ''} ${r.stack || ''} ${r.invoiceToName || ''} ${r.invoiceMonth || ''} ${r.cmpProfInvoiceCode}`.toLowerCase();
+      return words.every(w => text.includes(w));
+    });
   }, [rows, search]);
 
-  const handleUnprocess = async (code: number) => {
-    const confirmed = window.confirm('Move this invoice back to active (unprocess)?');
+  const allFilteredCodes = useMemo(() => {
+    return filteredRows.map(r => r.cmpProfInvoiceCode);
+  }, [filteredRows]);
+
+  const isAllSelected = allFilteredCodes.length > 0 && allFilteredCodes.every(c => selectedCodes.has(c));
+  const someSelected = selectedCodes.size > 0;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedCodes(new Set());
+    } else {
+      setSelectedCodes(new Set(allFilteredCodes));
+    }
+  };
+
+  const handleToggleRow = (code: number) => {
+    setSelectedCodes(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
+
+  // Undo / Move back to Unprocessed
+  const handleBatchUnprocess = async () => {
+    if (selectedCodes.size === 0) return;
+    const count = selectedCodes.size;
+    const confirmed = window.confirm(`Move ${count} selected invoice(s) back to Unprocessed?`);
     if (!confirmed) return;
-    setActionLoading(code);
+
+    setActionLoading(true);
     try {
-      await api.unprocessInvoices([code]);
-      flashSuccess('Invoice moved back to active.');
-      load();
+      const res = await api.unprocessInvoices(Array.from(selectedCodes));
+      flashSuccess(res.message || `${count} invoice(s) moved back to Unprocessed.`);
+      setSelectedCodes(new Set());
+      await load();
+      onRefreshUnprocessed?.();
+    } catch (err: any) {
+      flashError(err?.message || 'Failed to unprocess invoices.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSingleUnprocess = async (code: number) => {
+    const confirmed = window.confirm('Move this invoice back to Unprocessed?');
+    if (!confirmed) return;
+    setActionLoading(true);
+    try {
+      const res = await api.unprocessInvoices([code]);
+      flashSuccess(res.message || 'Invoice moved back to Unprocessed.');
+      setSelectedCodes(prev => {
+        const next = new Set(prev);
+        next.delete(code);
+        return next;
+      });
+      await load();
+      onRefreshUnprocessed?.();
     } catch (err: any) {
       flashError(err?.message || 'Failed to unprocess invoice.');
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
@@ -97,17 +153,17 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {/* Toolbar */}
-      <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px' }}>
+      <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
           <Archive size={13} style={{ color: 'var(--accent-primary)' }} />
           <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
             Processed Invoices
           </span>
 
-          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '0.4rem' }}>
+          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '0.2rem' }}>
             Owner:
           </span>
-          <div style={{ width: '180px' }}>
+          <div style={{ width: '170px' }}>
             <OwnerSearchSelect
               owners={groupOwners}
               value={ownerCode}
@@ -144,7 +200,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
 
           <button
             onClick={load}
-            disabled={loading}
+            disabled={loading || actionLoading}
             className="btn-secondary"
             style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '1px 7px', height: '24px', fontSize: '0.75rem', fontWeight: 600 }}
           >
@@ -152,9 +208,35 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
             {loading ? 'Loading...' : 'Refresh'}
           </button>
 
+          {/* Undo / Move back to Unprocessed Button */}
+          <button
+            onClick={handleBatchUnprocess}
+            disabled={!someSelected || actionLoading}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              padding: '2px 9px',
+              height: '24px',
+              fontSize: '0.74rem',
+              fontWeight: 700,
+              background: someSelected ? '#2563eb' : 'var(--bg-secondary)',
+              color: someSelected ? '#ffffff' : 'var(--text-muted)',
+              border: `1px solid ${someSelected ? '#2563eb' : 'var(--border-subtle)'}`,
+              borderRadius: 'var(--radius-sm)',
+              cursor: someSelected && !actionLoading ? 'pointer' : 'not-allowed',
+              opacity: someSelected ? 1 : 0.6,
+              transition: 'all 0.15s ease'
+            }}
+            title={someSelected ? `Move ${selectedCodes.size} invoice(s) back to Unprocessed` : 'Select rows to undo'}
+          >
+            <RotateCcw size={12} className={actionLoading ? 'spin' : ''} />
+            {actionLoading ? 'Moving...' : `Undo to Unprocessed ${someSelected ? `(${selectedCodes.size})` : ''}`}
+          </button>
+
           {/* Search */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={11} style={{ position: 'absolute', left: '5px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <Search size={11} style={{ position: 'absolute', left: '6px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
               type="text"
               value={search}
@@ -165,17 +247,50 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                 color: 'var(--text-main)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)',
-                padding: '1px 5px 1px 20px',
+                padding: '1px 22px 1px 20px',
                 fontSize: '0.72rem',
                 width: '130px',
                 height: '24px',
                 boxSizing: 'border-box'
               }}
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                style={{
+                  position: 'absolute',
+                  right: '4px',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={11} />
+              </button>
+            )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {someSelected && (
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              color: '#2563eb',
+              background: 'rgba(37, 99, 235, 0.08)',
+              border: '1px solid rgba(37, 99, 235, 0.25)',
+              borderRadius: '10px',
+              padding: '1px 8px',
+              fontFamily: 'var(--font-mono)'
+            }}>
+              Selected: {selectedCodes.size} of {filteredRows.length}
+            </span>
+          )}
           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
             {filteredRows.length} row{filteredRows.length !== 1 ? 's' : ''}
           </span>
@@ -214,120 +329,124 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
 
       {/* Table */}
       <div className="compact-table-container">
-        <table className="compact-table">
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'center', width: '40px' }}>#</th>
-              <th style={{ minWidth: '130px', textAlign: 'left' }}>Profile Owner</th>
-              <th style={{ minWidth: '80px', textAlign: 'left' }}>Stack</th>
-              <th style={{ minWidth: '130px', textAlign: 'left' }}>Project</th>
-              <th style={{ minWidth: '120px', textAlign: 'left' }}>Invoice To</th>
-              <th style={{ minWidth: '65px', textAlign: 'center' }}>Month</th>
-              <th style={{ minWidth: '70px', textAlign: 'right' }}>Charged USD</th>
-              <th style={{ minWidth: '80px', textAlign: 'right' }}>Charged PKR</th>
-              <th style={{ minWidth: '55px', textAlign: 'center' }}>Status</th>
-              <th style={{ minWidth: '100px', textAlign: 'left' }}>Insert By</th>
-              <th style={{ minWidth: '55px', textAlign: 'center' }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
+        {loading ? (
+          <LoadingIndicator message="Loading processed invoices..." fullHeight />
+        ) : (
+          <table className="compact-table">
+            <thead>
               <tr>
-                <td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  Loading processed invoices...
-                </td>
+                <th style={{ textAlign: 'center', width: '36px' }}>
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={handleToggleSelectAll}
+                    disabled={filteredRows.length === 0}
+                    style={{ cursor: 'pointer', width: '13px', height: '13px' }}
+                    title={isAllSelected ? 'Deselect All' : 'Select All'}
+                  />
+                </th>
+                <th style={{ textAlign: 'center', width: '40px' }}>#</th>
+                <th style={{ minWidth: '130px', textAlign: 'left' }}>Profile Owner</th>
+                <th style={{ minWidth: '80px', textAlign: 'left' }}>Stack</th>
+                <th style={{ minWidth: '130px', textAlign: 'left' }}>Project</th>
+                <th style={{ minWidth: '120px', textAlign: 'left' }}>Invoice To</th>
+                <th style={{ minWidth: '65px', textAlign: 'center' }}>Month</th>
+                <th style={{ minWidth: '70px', textAlign: 'right' }}>Charged USD</th>
+                <th style={{ minWidth: '80px', textAlign: 'right' }}>Charged PKR</th>
+                <th style={{ minWidth: '55px', textAlign: 'center' }}>Status</th>
+                <th style={{ minWidth: '100px', textAlign: 'left' }}>Insert By</th>
+                <th style={{ minWidth: '65px', textAlign: 'center' }}>Action</th>
               </tr>
-            ) : filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  {rows.length === 0 ? `No processed invoices found for ${month}.` : 'No results match your search.'}
-                </td>
-              </tr>
-            ) : (
-              filteredRows.map((row, idx) => (
-                <tr
-                  key={row.cmpProfInvoiceCode}
-                  className={`table-row-hover ${row.isForeign ? 'foreign-row' : ''}`.trim()}
-                  style={{
-                    background: row.isForeign ? 'var(--bg-foreign-row)' : idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
-                    borderLeft: row.isForeign ? '3px solid var(--border-foreign, #2563eb)' : undefined
-                  }}
-                >
-                  <td style={{ textAlign: 'center', padding: '0.2rem 0.3rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>
-                    {idx + 1}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', border: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-main)' }}>{row.profileName}</div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{row.cmpProfInvoiceCode}</div>
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', fontSize: '0.75rem', border: '1px solid var(--border-subtle)' }}>
-                    {row.stack || ''}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', fontSize: '0.75rem', border: '1px solid var(--border-subtle)' }}>
-                    {row.projectName || ''}
-                    {row.projectCode ? <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>({row.projectCode})</span> : null}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', fontSize: '0.75rem', border: '1px solid var(--border-subtle)' }}>
-                    {row.invoiceToName}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', border: '1px solid var(--border-subtle)' }}>
-                    {row.invoiceMonth}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', border: '1px solid var(--border-subtle)' }}>
-                    {fmtUsd(row.chargedAmtUsd)}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', border: '1px solid var(--border-subtle)' }}>
-                    {fmtPkr(row.chargedAmtPkr)}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
-                    <span style={{
-                      fontSize: '0.68rem',
-                      padding: '0.1rem 0.3rem',
-                      borderRadius: '3px',
-                      background: 'rgba(16,185,129,0.15)',
-                      color: '#10b981',
-                      fontWeight: 600
-                    }}>
-                      {row.status || 'P'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.2rem 0.35rem', fontSize: '0.7rem', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>
-                    {row.insertBy || ''}
-                    {row.insertTime ? (
-                      <div style={{ fontSize: '0.65rem' }}>
-                        {new Date(row.insertTime).toLocaleDateString()}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td style={{ padding: '0.2rem 0.3rem', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
-                    <button
-                      onClick={() => handleUnprocess(row.cmpProfInvoiceCode)}
-                      disabled={actionLoading === row.cmpProfInvoiceCode}
-                      title="Move back to Active"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.2rem',
-                        padding: '1px 5px',
-                        height: '20px',
-                        fontSize: '0.65rem',
-                        border: '1px solid #f59e0b',
-                        background: 'rgba(245,158,11,0.1)',
-                        color: '#f59e0b',
-                        borderRadius: '3px',
-                        cursor: actionLoading === row.cmpProfInvoiceCode ? 'not-allowed' : 'pointer',
-                        opacity: actionLoading === row.cmpProfInvoiceCode ? 0.6 : 1
-                      }}
-                    >
-                      <RotateCcw size={10} />
-                      Undo
-                    </button>
+            </thead>
+            <tbody>
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={12} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {search ? `No processed invoices matching "${search}".` : 'No processed invoices found.'}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredRows.map((r, i) => {
+                  const isChecked = selectedCodes.has(r.cmpProfInvoiceCode);
+                  return (
+                    <tr
+                      key={r.cmpProfInvoiceCode}
+                      className="table-row-hover"
+                      style={{
+                        background: isChecked ? 'rgba(59, 130, 246, 0.08)' : undefined,
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => handleToggleRow(r.cmpProfInvoiceCode)}
+                    >
+                      <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(r.cmpProfInvoiceCode)}
+                          style={{ cursor: 'pointer', width: '13px', height: '13px' }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                        {i + 1}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{r.profileName}</td>
+                      <td style={{ color: 'var(--text-muted)' }}>{r.stack || '-'}</td>
+                      <td>{r.projectName || '-'}</td>
+                      <td>{r.invoiceToName || '-'}</td>
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                        {r.invoiceMonth}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
+                        {fmtUsd(r.chargedAmtUsd)}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                        {fmtPkr(r.chargedAmtPkr)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          background: 'rgba(59, 130, 246, 0.1)',
+                          color: '#2563eb'
+                        }}>
+                          PROCESSED
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{r.insertBy || '-'}</td>
+                      <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleSingleUnprocess(r.cmpProfInvoiceCode)}
+                          disabled={actionLoading}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                            padding: '1px 5px',
+                            height: '20px',
+                            fontSize: '0.68rem',
+                            background: 'transparent',
+                            color: '#2563eb',
+                            border: '1px solid rgba(37, 99, 235, 0.3)',
+                            borderRadius: 'var(--radius-sm)',
+                            cursor: 'pointer'
+                          }}
+                          title="Move back to Unprocessed"
+                        >
+                          <RotateCcw size={10} />
+                          Undo
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

@@ -156,6 +156,13 @@ public class ProfileInvoiceProjectUpdateRequest
     public int? ProRateDays { get; set; }
     public int? MonthDays { get; set; }
     public string? SalaryRate { get; set; }
+    public bool? IsIncluded { get; set; }
+    public string? ProjectName { get; set; }
+    public string? JobType { get; set; }
+    public string? ProjStatus { get; set; }
+    public string? StartEndDate { get; set; }
+    public string? ProfileNature { get; set; }
+    public string? Stack { get; set; }
     public string MonthYear { get; set; } = string.Empty;
     public int GroupOwnerCode { get; set; }
 }
@@ -256,6 +263,7 @@ public class SendProfileInvoiceEmailRequest
     public bool RememberSettings { get; set; }
     public bool? ProcessedOnly { get; set; }
     public bool ExcludeToBeDiscussed { get; set; } = true;
+    public List<long>? SpecificCodes { get; set; }
 }
 
 public class ProfileInvoiceProcessedRowDto

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Download, 
   RefreshCw, 
@@ -13,7 +13,7 @@ import {
   Archive
 } from 'lucide-react';
 import { api } from '../api/client';
-import { OwnerSearchSelect } from './OwnerSearchSelect';
+import { LoadingIndicator } from './LoadingIndicator';
 import { ProfileInvoiceAuditTab } from './ProfileInvoiceAuditTab';
 import { ProfileInvoiceUnprocessedTab } from './ProfileInvoiceUnprocessedTab';
 import { ProfileInvoiceToBeDiscussedTab } from './ProfileInvoiceToBeDiscussedTab';
@@ -23,7 +23,8 @@ import type {
   ProfileGroupOwnerDto, 
   ProfileInvoiceExcelViewResult,
   ProfileInvoiceRowUpdateRequest,
-  ProfileInvoiceProjectUpdateRequest
+  ProfileInvoiceProjectUpdateRequest,
+  ProfileInvoiceUnprocessedRowDto
 } from '../types';
 
 interface ProfileInvoiceExcelViewProps {
@@ -52,7 +53,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [downloading, setDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [togglingCode, setTogglingCode] = useState<number | null>(null);
-  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead';
+  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
   const [editingCell, setEditingCell] = useState<{
     rowIdx: number;
     rowType: 'ProjectHeader' | 'Detail' | 'Standalone';
@@ -60,6 +61,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     projectCode?: number;
     field: EditableField;
     value: string;
+    
   } | null>(null);
   const [savingCell, setSavingCell] = useState<boolean>(false);
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colKey: string } | null>(null);
@@ -79,7 +81,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
   // Owners fetched fresh from posted-group-owners endpoint
   const [postedOwners, setPostedOwners] = useState<ProfileGroupOwnerDto[]>([]);
-  const [ownersLoading, setOwnersLoading] = useState<boolean>(false);
   const [allOwners, setAllOwners] = useState<ProfileGroupOwnerDto[]>([]);
 
   // KAAM 4: Available months from backend
@@ -89,6 +90,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   // Email sub-tab integration for Save & Email
   const [emailSelectedCodes, setEmailSelectedCodes] = useState<number[] | null>(null);
   const [emailSelectedRows, setEmailSelectedRows] = useState<any[] | null>(null);
+
+  // Unprocessed owners for the top navigation dropdown
+  const [unprocessedOwners, setUnprocessedOwners] = useState<ProfileInvoiceUnprocessedRowDto[]>([]);
+  const [unprocessedLoading, setUnprocessedLoading] = useState<boolean>(false);
+  const [unprocessedRefreshKey, setUnprocessedRefreshKey] = useState<number>(0);
+
+  // Runtime Auto-Save state
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // Helper to compute initial selected row indices: all non-processed rows CHECKED by default,
   // except rows already marked to_be_discussed = 1 which start UNCHECKED and red.
@@ -111,6 +120,18 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   };
 
   const cleanMonth = monthYear.trim().replace('-', '').toUpperCase();
+
+  const displayOwnerName = useMemo(() => {
+    if (lockedOwnerName && lockedOwnerName.trim()) return lockedOwnerName.trim();
+    if (data?.groupOwnerName && data.groupOwnerName.trim()) return data.groupOwnerName.trim();
+    if (selectedOwnerCode) {
+      const match = allOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode))
+                 || postedOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode))
+                 || _groupOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode));
+      if (match?.profileName) return match.profileName.trim();
+    }
+    return '';
+  }, [lockedOwnerName, data?.groupOwnerName, selectedOwnerCode, allOwners, postedOwners, _groupOwners]);
 
   // Reset confirmation on month or owner switch
   useEffect(() => {
@@ -187,7 +208,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   // Fetch all owners (for unlocked dropdown) + posted owners (for sub-tabs) whenever month changes
   useEffect(() => {
     const fetchOwners = async () => {
-      setOwnersLoading(true);
       try {
         // Always fetch posted owners (used by sub-tabs)
         const posted = await api.getPostedGroupOwners(cleanMonth || undefined);
@@ -207,12 +227,28 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         console.error('Failed to load group owners', err);
         setPostedOwners([]);
         setAllOwners([]);
-      } finally {
-        setOwnersLoading(false);
       }
     };
     fetchOwners();
   }, [cleanMonth, lockedOwnerName]);
+
+  const fetchUnprocessedOwners = useCallback(async () => {
+    if (!cleanMonth) return;
+    setUnprocessedLoading(true);
+    try {
+      const res = await api.getUnprocessedInvoices(cleanMonth);
+      setUnprocessedOwners(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load unprocessed owners', err);
+      setUnprocessedOwners([]);
+    } finally {
+      setUnprocessedLoading(false);
+    }
+  }, [cleanMonth]);
+
+  useEffect(() => {
+    fetchUnprocessedOwners();
+  }, [fetchUnprocessedOwners]);
 
   const skipAutoLoadRef = useRef<boolean>(false);
 
@@ -230,7 +266,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     setError(null);
     try {
       // Direct fast excel-view load (auto-generates if not yet present)
-      const freshData = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
+      let freshData = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
+      if (freshData.totalSavedRows === 0) {
+        try {
+          const genResult = await api.generateAndOpenProfileInvoices(Number(selectedOwnerCode), cleanMonth);
+          if (genResult.excelView && genResult.excelView.totalSavedRows > 0) {
+            freshData = genResult.excelView;
+          }
+        } catch { /* if no unbilled rows, keep freshData */ }
+      }
       setData(freshData);
       setSelectedRowIndices(computeInitialSelectedIndices(freshData));
       setProcessMsg(null);
@@ -338,6 +382,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
     const prevData = data;
     setTogglingCode(code);
+    setAutoSaveStatus('saving');
     setError(null);
     try {
       const payload: ProfileInvoiceRowUpdateRequest = { isIncluded: checked };
@@ -367,10 +412,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
         setData(fresh);
       }
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus('idle'), 2500);
     } catch (err: any) {
       console.error('Failed to update included status', err);
       setData(prevData); // rollback on fail
       setError(err?.message || 'Failed to update checkbox status.');
+      setAutoSaveStatus('error');
+      setTimeout(() => setAutoSaveStatus('idle'), 3500);
     } finally {
       setTogglingCode(null);
     }
@@ -388,6 +437,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     const prevData = data;
     try {
       setSavingCell(true);
+      setAutoSaveStatus('saving');
       setError(null);
 
       if ((rowType === 'ProjectHeader' || field === 'agreedRate') && projectCode) {
@@ -402,6 +452,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           if (isNaN(num) || num < 0) {
             flashMsg('error', 'Please enter a valid non-negative rate.');
             setEditingCell(null);
+            setAutoSaveStatus('error');
+            setTimeout(() => setAutoSaveStatus('idle'), 3500);
             return;
           }
           req.agreedRate = num;
@@ -415,6 +467,18 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           }
         } else if (field === 'salaryRate') {
           req.salaryRate = value;
+        } else if (field === 'projectName') {
+          req.projectName = value;
+        } else if (field === 'jobType') {
+          req.jobType = value;
+        } else if (field === 'projStatus') {
+          req.projStatus = value;
+        } else if (field === 'startEndDate') {
+          req.startEndDate = value;
+        } else if (field === 'profileNature') {
+          req.profileNature = value;
+        } else if (field === 'stack') {
+          req.stack = value;
         }
 
         const res = await api.updateProfileInvoiceProject(projectCode, req);
@@ -424,7 +488,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
           setData(fresh);
         }
-        flashMsg('success', res.message || `Project #${projectCode} rate successfully updated in database.`);
+        setAutoSaveStatus('saved');
+        setTimeout(() => setAutoSaveStatus('idle'), 2500);
+        flashMsg('success', res.message || `Project #${projectCode} details successfully updated in database.`);
       } else if (code) {
         const req: ProfileInvoiceRowUpdateRequest = {};
         if (field === 'finalUsd' || field === 'otherCharge') {
@@ -444,11 +510,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           if (isNaN(num) || num < 0) {
             flashMsg('error', 'Please enter a valid non-negative rate.');
             setEditingCell(null);
+            setAutoSaveStatus('error');
+            setTimeout(() => setAutoSaveStatus('idle'), 3500);
             return;
           }
           req.agreedRate = num;
         } else if (field === 'serviceHead') {
           req.remarks = value;
+        } else if (field === 'salaryRate') {
+          req.salaryRate = value;
+        } else if (field === 'projStatus') {
+          req.status = value;
         }
 
         const res = await api.updateProfileInvoiceRow(code, req);
@@ -458,12 +530,16 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
           setData(fresh);
         }
+        setAutoSaveStatus('saved');
+        setTimeout(() => setAutoSaveStatus('idle'), 2500);
         flashMsg('success', res.message || 'Row successfully updated.');
       }
     } catch (err: any) {
       console.error('Failed to update cell amount', err);
       setData(prevData); // rollback on fail
       setError(err?.message || 'Failed to update amount.');
+      setAutoSaveStatus('error');
+      setTimeout(() => setAutoSaveStatus('idle'), 3500);
       flashMsg('error', err?.message || 'Failed to update amount.');
     } finally {
       setSavingCell(false);
@@ -482,18 +558,27 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     align: 'left' | 'right' | 'center' = 'right'
   ) => {
     const isEditing = editingCell?.rowIdx === rowIdx && editingCell.field === field;
-    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'hoursDays' || field === 'salaryRate')) ||
-                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'finalUsd' || field === 'totalCost' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate'));
+    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
+                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'finalUsd' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
 
     if (!canEdit) {
+      if (field === 'totalCost') {
+        return (
+          <span title="Calculated" style={{ cursor: 'default' }}>
+            {displayValue}
+          </span>
+        );
+      }
       return displayValue;
     }
+
+    const isNumberField = field === 'finalUsd' || field === 'agreedRate' || field === 'otherCharge';
 
     if (isEditing) {
       return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start', width: '100%' }}>
           <input
-            type={field === 'hoursDays' || field === 'salaryRate' || field === 'serviceHead' ? 'text' : 'number'}
+            type={isNumberField ? 'number' : 'text'}
             autoFocus
             value={editingCell.value}
             disabled={savingCell}
@@ -504,7 +589,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               if (e.key === 'Escape') setEditingCell(null);
             }}
             style={{
-              width: field === 'hoursDays' || field === 'serviceHead' ? '95px' : '70px',
+              width: isNumberField ? '75px' : '110px',
               padding: '0.1rem 0.25rem',
               fontSize: '0.75rem',
               textAlign: align,
@@ -765,7 +850,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   };
 
   const handleSaveAndEmail = async () => {
-    if (!someSelected || !data) return;
+    if (!someSelected || !data || processingSelected) return;
     if (editingCell) {
       try {
         await handleCellSave();
@@ -776,6 +861,22 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
     const codes = getSelectedCodes();
     if (codes.length === 0) return;
+
+    // Move selected rows to Processed (is_processed = 1)
+    setProcessingSelected(true);
+    try {
+      const res = await api.processInvoices(codes);
+      if (!res.success) {
+        flashMsg('error', res.message || 'Failed to mark invoices as processed.');
+      } else {
+        setUnprocessedRefreshKey(k => k + 1);
+        fetchUnprocessedOwners();
+      }
+    } catch (err: any) {
+      console.warn('Process before email warning:', err);
+    } finally {
+      setProcessingSelected(false);
+    }
 
     const previewRows: any[] = [];
     data.rows.forEach(row => {
@@ -788,7 +889,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           chargedAmtUsd: row.chargedAmtUsd ?? ((row.finalUsd ?? 0) + (row.shareAmount ?? 0)),
           profileName: row.profileOwner || data.groupOwnerName,
           isForeign: row.isForeign,
-          isProcessed: row.isProcessed
+          isProcessed: true
         });
       }
     });
@@ -824,8 +925,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         return;
       }
       setProcessMsg({ type: 'success', text: res.message || `${res.updatedCount} invoice(s) processed successfully.` });
-      flashMsg('success', res.message || `${res.updatedCount} invoice(s) processed successfully.`);
+      flashMsg('success', res.message || `${res.updatedCount} invoice(s) processed successfully. Processed tab mein move ho chuki hain.`);
       await handleLoad();
+      setUnprocessedRefreshKey(k => k + 1);
+      await fetchUnprocessedOwners();
+      setActiveExcelTab('processed');
     } catch (err: any) {
       const msg = err?.message || 'Failed to process invoices.';
       setProcessMsg({ type: 'error', text: msg });
@@ -935,6 +1039,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         <ProfileInvoiceUnprocessedTab
           initialMonth={cleanMonth}
           onSelectOwner={handleNavigateFromUnprocessed}
+          refreshKey={unprocessedRefreshKey}
         />
       ) : activeExcelTab === 'discussed' ? (
         <ProfileInvoiceToBeDiscussedTab
@@ -947,6 +1052,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           groupOwners={postedOwners}
           initialOwnerCode={selectedOwnerCode}
           initialMonth={cleanMonth}
+          onRefreshUnprocessed={() => {
+            setUnprocessedRefreshKey(k => k + 1);
+            fetchUnprocessedOwners();
+          }}
         />
       ) : activeExcelTab === 'email' ? (
         <ProfileInvoiceEmailTab
@@ -992,49 +1101,50 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           )}
           <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                Owner:
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                Profile Owner:
               </span>
-              <div style={{ width: '200px' }}>
-                {lockedOwnerName ? (
-                  <div
-                    title="Owner Profile Invoicing page se badlein"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      padding: '2px 8px',
-                      height: '24px',
-                      background: 'rgba(99,102,241,0.12)',
-                      border: '1px solid rgba(99,102,241,0.4)',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      color: '#6366f1',
-                      cursor: 'default',
-                      userSelect: 'none',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: '200px'
-                    }}
-                  >
-                    🔒 {lockedOwnerName}
-                  </div>
-                ) : (
-                  <OwnerSearchSelect
-                    owners={allOwners}
-                    value={selectedOwnerCode}
-                    onChange={(val) => {
-                      setSelectedOwnerCode(val);
-                      if (onOwnerChange) onOwnerChange(val);
-                    }}
-                    allowAll={false}
-                    placeholder={ownersLoading ? 'Loading...' : allOwners.length === 0 ? 'Loading owners...' : 'Select Owner...'}
-                    emptyMessage={allOwners.length === 0 ? 'Loading owners...' : 'No owners found'}
-                    compact={true}
-                  />
-                )}
+              <div style={{ minWidth: '220px' }}>
+                <select
+                  value={selectedOwnerCode ? String(selectedOwnerCode) : ''}
+                  onChange={(e) => {
+                    const code = Number(e.target.value);
+                    if (code) {
+                      handleNavigateFromUnprocessed(code, cleanMonth);
+                    }
+                  }}
+                  disabled={unprocessedLoading}
+                  style={{
+                    width: '100%',
+                    height: '24px',
+                    padding: '1px 6px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1.5px solid #6366f1',
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="">
+                    {unprocessedLoading
+                      ? 'Loading owners...'
+                      : unprocessedOwners.length === 0
+                      ? 'No pending owners'
+                      : 'Select Profile Owner...'}
+                  </option>
+                  {unprocessedOwners.map((owner) => (
+                    <option key={owner.prfownCode} value={owner.prfownCode}>
+                      {owner.profileName}
+                    </option>
+                  ))}
+                  {selectedOwnerCode && !unprocessedOwners.some(o => o.prfownCode === Number(selectedOwnerCode)) && displayOwnerName && (
+                    <option value={selectedOwnerCode}>
+                      {displayOwnerName}
+                    </option>
+                  )}
+                </select>
               </div>
 
               <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '0.2rem' }}>
@@ -1087,6 +1197,53 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 <RefreshCw size={12} className={loading ? 'spin' : ''} />
                 {loading ? 'Loading...' : 'Refresh Excel View'}
               </button>
+
+              {/* Auto-Save Status Indicator */}
+              {autoSaveStatus === 'saving' && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: '#2563eb',
+                  background: 'rgba(37, 99, 235, 0.08)',
+                  padding: '2px 6px',
+                  borderRadius: '3px'
+                }}>
+                  <RefreshCw size={11} className="spin" /> Saving...
+                </span>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: '#059669',
+                  background: 'rgba(5, 150, 105, 0.08)',
+                  padding: '2px 6px',
+                  borderRadius: '3px'
+                }}>
+                  <Check size={11} /> Saved
+                </span>
+              )}
+              {autoSaveStatus === 'error' && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: '#dc2626',
+                  background: 'rgba(220, 38, 38, 0.08)',
+                  padding: '2px 6px',
+                  borderRadius: '3px'
+                }}>
+                  <AlertTriangle size={11} /> Save Failed
+                </span>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -1137,16 +1294,16 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.3rem',
                   padding: '1px 8px', height: '24px', fontSize: '0.75rem', fontWeight: 600,
-                  background: someSelected ? '#10b981' : 'var(--bg-secondary)',
+                  background: someSelected ? '#2563eb' : 'var(--bg-secondary)',
                   color: someSelected ? '#fff' : 'var(--text-muted)',
-                  border: `1px solid ${someSelected ? '#10b981' : 'var(--border-subtle)'}`,
+                  border: `1px solid ${someSelected ? '#2563eb' : 'var(--border-subtle)'}`,
                   borderRadius: 'var(--radius-sm)',
                   cursor: someSelected ? 'pointer' : 'not-allowed',
                   opacity: someSelected ? 1 : 0.5
                 }}
                 title={someSelected ? `Process ${selectedCodesCount} selected invoices` : 'Select rows first'}
               >
-                <CheckCircle size={12} />
+                <CheckCircle size={12} className={processingSelected ? 'spin' : ''} />
                 {processingSelected ? 'Processing...' : 'Save & Process'}
               </button>
             </div>
@@ -1177,8 +1334,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               alignItems: 'center',
               gap: '0.5rem',
               padding: '3px 6px',
-              background: someSelected ? 'rgba(16,185,129,0.07)' : 'var(--bg-secondary)',
-              border: `1px solid ${someSelected ? 'rgba(16,185,129,0.3)' : 'var(--border-subtle)'}`,
+              background: someSelected ? 'rgba(59, 130, 246, 0.06)' : 'var(--bg-secondary)',
+              border: `1px solid ${someSelected ? 'rgba(59, 130, 246, 0.25)' : 'var(--border-subtle)'}`,
               borderRadius: 'var(--radius-sm)',
               flexWrap: 'wrap',
               transition: 'background 0.2s, border-color 0.2s'
@@ -1192,9 +1349,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   height: '24px',
                   fontSize: '0.72rem',
                   fontWeight: 700,
-                  background: allSelected ? 'rgba(16,185,129,0.15)' : '#10b981',
-                  color: allSelected ? '#10b981' : '#fff',
-                  border: `1px solid ${allSelected ? '#10b981' : '#10b981'}`,
+                  background: allSelected ? 'rgba(37, 99, 235, 0.12)' : '#2563eb',
+                  color: allSelected ? '#2563eb' : '#fff',
+                  border: '1px solid #2563eb',
                   borderRadius: 'var(--radius-sm)',
                   cursor: (allSelected || allSelectableIndices.size === 0) ? 'not-allowed' : 'pointer',
                   opacity: (allSelected || allSelectableIndices.size === 0) ? 0.6 : 1,
@@ -1233,9 +1390,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 <span style={{
                   fontSize: '0.72rem',
                   fontWeight: 700,
-                  color: '#10b981',
-                  background: 'rgba(16,185,129,0.12)',
-                  border: '1px solid rgba(16,185,129,0.3)',
+                  color: '#2563eb',
+                  background: 'rgba(37, 99, 235, 0.08)',
+                  border: '1px solid rgba(37, 99, 235, 0.25)',
                   borderRadius: '10px',
                   padding: '1px 8px',
                   fontFamily: 'var(--font-mono)'
@@ -1251,7 +1408,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 </span>
               )}
               {allSelectableIndices.size === 0 && (
-                <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600 }}>
                   ✓ All invoices for this owner are already processed
                 </span>
               )}
@@ -1307,19 +1464,23 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         </div>
 
                         {/* TOTAL INVOICE prominent display */}
-                        <div style={{
-                          display: 'inline-flex',
-                          alignItems: 'baseline',
-                          gap: '0.35rem',
-                          background: 'rgba(16, 185, 129, 0.12)',
-                          border: '1.5px solid rgba(16, 185, 129, 0.35)',
-                          padding: '2px 8px',
-                          borderRadius: '4px'
-                        }}>
+                        <div 
+                          title="Calculated (Total Actual + Total Other)"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'baseline',
+                            gap: '0.35rem',
+                            background: 'rgba(37, 99, 235, 0.08)',
+                            border: '1.5px solid rgba(37, 99, 235, 0.25)',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            cursor: 'default'
+                          }}
+                        >
                           <span style={{ fontSize: '0.70rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                             TOTAL INVOICE:
                           </span>
-                          <span style={{ fontSize: '1.12rem', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                          <span style={{ fontSize: '1.12rem', fontWeight: 900, color: '#2563eb', fontFamily: 'var(--font-mono)' }}>
                             ${data.totalInvoice.toLocaleString()}
                           </span>
                         </div>
@@ -1498,11 +1659,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 </tr>
               </thead>
               <tbody>
-              {!data || data.rows.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={16} style={{ padding: '3rem' }}>
+                    <LoadingIndicator message="Loading Excel view..." />
+                  </td>
+                </tr>
+              ) : !data || data.rows.length === 0 ? (
                 <tr>
                   <td colSpan={16} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                    {loading ? 'Loading Excel view...' : data && data.totalSavedRows === 0 && lockedOwnerName
-                      ? `No saved rows for ${lockedOwnerName} in ${cleanMonth}. Profile Invoicing mein Save & Post karein.`
+                    {data && data.totalSavedRows === 0 && displayOwnerName
+                      ? `No saved rows for ${displayOwnerName} in ${cleanMonth}. Profile Invoicing mein Save & Post karein.`
                       : 'No saved invoice rows found for this Group Owner and Month.'}
                   </td>
                 </tr>
@@ -1566,7 +1733,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   const isDiscuss = !!(row.isToBeDiscussed || row.toBeDiscussed);
                   const isRowSelected = selectedRowIdx === idx;
                   const rowBg = isCheckedForProcess
-                    ? isDiscuss ? 'rgba(239, 68, 68, 0.32)' : 'rgba(16,185,129,0.09)'
+                    ? isDiscuss ? 'rgba(239, 68, 68, 0.32)' : 'rgba(59, 130, 246, 0.06)'
                     : isRowSelected
                     ? isDiscuss ? 'rgba(239, 68, 68, 0.35)' : 'rgba(59, 130, 246, 0.15)'
                     : isDiscuss
@@ -1793,7 +1960,16 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         onClick={() => setSelectedCell({ rowIdx: idx, colKey: 'K' })}
                         style={{ padding: '0.2rem 0.35rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#b45309', fontWeight: 700, fontSize: '15px', border: '1px solid var(--border-subtle)', ...getCellHighlight('K') }}
                       >
-                        {renderEditableCell(idx, 'otherCharge', row.otherCharge != null ? `$${row.otherCharge.toLocaleString()}` : '', row.otherCharge, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                        {renderEditableCell(
+                          idx, 
+                          'otherCharge', 
+                          row.isIncluded !== false && row.otherCharge != null ? `$${row.otherCharge.toLocaleString()}` : '', 
+                          row.otherCharge, 
+                          row.rowType, 
+                          row.cmpProfInvoiceCode, 
+                          row.projectCode, 
+                          'right'
+                        )}
                       </td>
 
                       {/* Inc Checkbox Column (After Other Charge) */}

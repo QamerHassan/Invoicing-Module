@@ -18,6 +18,7 @@ backup*
 *.ldf
 
 # Reference & Scratch files
+scripts/
 scratch/
 scratch_*
 prompt_*.txt

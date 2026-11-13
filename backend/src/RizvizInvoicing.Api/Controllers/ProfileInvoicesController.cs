@@ -397,6 +397,23 @@ public class ProfileInvoicesController : ControllerBase
                 }
             }
 
+            // Mark emailed invoices as processed (is_processed = 1) so they move to the Processed tab
+            try
+            {
+                if (request.SpecificCodes != null && request.SpecificCodes.Count > 0)
+                {
+                    await _profileInvoicingService.ProcessInvoicesAsync(request.SpecificCodes, User?.Identity?.Name ?? "Email", ct);
+                }
+                else
+                {
+                    await _profileInvoicingService.ProcessInvoicesByOwnerAsync(new List<int> { request.GroupOwnerCode }, request.Month, User?.Identity?.Name ?? "Email", ct);
+                }
+            }
+            catch (Exception procEx)
+            {
+                _logger.LogWarning("Email sent but failed to auto-mark as processed: {Message}", procEx.Message);
+            }
+
             return Ok(new { success = true, message = $"Email sent successfully to {request.ToEmail} with attachment {filename}." });
         }
         catch (MailKit.Security.AuthenticationException ex)

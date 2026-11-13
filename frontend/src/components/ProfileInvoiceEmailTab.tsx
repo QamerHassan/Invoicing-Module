@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
+import { LoadingIndicator } from './LoadingIndicator';
 import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedRowDto } from '../types';
 
 interface ProfileInvoiceEmailTabProps {
@@ -348,11 +349,12 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         appPassword: activeAppPassword,
         rememberSettings: activeRemember,
         processedOnly: isSelectedMode ? false : true,
-        excludeToBeDiscussed: true
+        excludeToBeDiscussed: true,
+        specificCodes: isSelectedMode && selectedCodes && selectedCodes.length > 0 ? selectedCodes : undefined
       });
 
       if (result.success) {
-        setSuccessMsg(result.message || `Invoice email sent successfully to ${toEmail.trim()}!`);
+        setSuccessMsg((result.message || `Invoice email sent successfully to ${toEmail.trim()}!`) + ' Invoices processed tab mein move ho chuki hain.');
         setEmailSent(true);
         setFieldErrors({});
 
@@ -822,10 +824,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             background: 'var(--bg-surface)'
           }}>
             {loadingProcessed ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                <RefreshCw size={16} className="spin" style={{ margin: '0 auto 6px' }} />
-                <span>Loading processed invoices for {activeOwnerName}...</span>
-              </div>
+              <LoadingIndicator message={`Loading processed invoices for ${activeOwnerName}...`} />
             ) : displayRows.length === 0 ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <FileSpreadsheet size={24} color="#f59e0b" style={{ margin: '0 auto 8px' }} />

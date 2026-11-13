@@ -47,15 +47,18 @@ public class ProfileInvoiceExcelViewTests
             await conn.OpenAsync();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT pi.prfgrp_own_code,
+                SELECT po.PrfOwn_code,
                        COALESCE(po.profile_name, 'Unknown'),
-                       COUNT(*),
-                       SUM(pi.charged_amt_usd)
-                FROM dbo.Profile_invoicing pi
-                LEFT JOIN prof.Profile_Owners po ON pi.prfgrp_own_code = po.PrfOwn_code
-                WHERE pi.invoice_month = 'SEP26'
-                GROUP BY pi.prfgrp_own_code, po.profile_name
-                ORDER BY pi.prfgrp_own_code ASC";
+                       (SELECT COUNT(*) FROM dbo.Profile_invoicing pi WHERE REPLACE(RTRIM(pi.invoice_month), '-', '') = 'SEP26' AND (pi.prfgrp_own_code = po.PrfOwn_code OR (pi.prfgrp_own_code IS NULL AND pi.prfown_code = po.PrfOwn_code))),
+                       (SELECT ISNULL(SUM(pi.charged_amt_usd), 0) FROM dbo.Profile_invoicing pi WHERE REPLACE(RTRIM(pi.invoice_month), '-', '') = 'SEP26' AND (pi.prfgrp_own_code = po.PrfOwn_code OR (pi.prfgrp_own_code IS NULL AND pi.prfown_code = po.PrfOwn_code)))
+                FROM prof.Profile_Owners po
+                WHERE (po.ParentProfile_code IS NULL OR po.ParentProfile_code = 0 OR po.ParentProfile_code = po.PrfOwn_code)
+                  AND EXISTS (
+                    SELECT 1 FROM dbo.Profile_invoicing pi
+                    WHERE REPLACE(RTRIM(pi.invoice_month), '-', '') = 'SEP26'
+                      AND (pi.prfgrp_own_code = po.PrfOwn_code OR (pi.prfgrp_own_code IS NULL AND pi.prfown_code = po.PrfOwn_code))
+                )
+                ORDER BY po.PrfOwn_code ASC";
 
             using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
@@ -83,9 +86,8 @@ public class ProfileInvoiceExcelViewTests
             var view = await service.GetExcelViewAsync(owner.Code, "SEP26", CancellationToken.None);
             byte[] xlsx = await service.GetExcelDownloadAsync(owner.Code, "SEP26", CancellationToken.None);
 
-            // (i) Col F sum = sum of Round(charged_amt_usd) of project>0 rows + standalone rows
-            // Detail rows count + standalone rows count
-            int dataRowCount = view.Rows.Count(r => r.RowType == "Detail" || r.RowType == "Standalone");
+            // Detail rows count (only those with invoice codes, excluding synthetic Rizviz Share rows) + standalone rows count
+            int dataRowCount = view.Rows.Count(r => (r.RowType == "Detail" && r.CmpProfInvoiceCode.HasValue) || r.RowType == "Standalone");
 
             // Check (iii): row count == saved rows
             Assert.Equal(owner.SavedRows, dataRowCount);
@@ -166,7 +168,7 @@ public class ProfileInvoiceExcelViewTests
         // 2. Row 3 formulas & values (Col 8 = Actual Charges Sum, Col 9 = Other Charge Sum)
         string formulaH3 = ws.Cell(3, 8).FormulaA1;
         string formulaI3 = ws.Cell(3, 9).FormulaA1;
-        Assert.StartsWith("SUMIF(J5:J", formulaH3);
+        Assert.StartsWith("SUM(H5:H", formulaH3);
         Assert.StartsWith("SUMIF(J5:J", formulaI3);
 
         decimal valH3 = Convert.ToDecimal(ws.Cell(3, 8).Value.GetNumber());
@@ -193,13 +195,6 @@ public class ProfileInvoiceExcelViewTests
                 var hCell = ws.Cell(r, 8);
                 var iCell = ws.Cell(r, 9);
 
-                if (hCell.Value.IsNumber && Convert.ToDecimal(hCell.Value.GetNumber()) > 0)
-                {
-                    targetRow = r;
-                    targetAmount = Convert.ToDecimal(hCell.Value.GetNumber());
-                    isActualCharge = true;
-                    break;
-                }
                 if (iCell.Value.IsNumber && Convert.ToDecimal(iCell.Value.GetNumber()) > 0)
                 {
                     targetRow = r;
@@ -220,14 +215,11 @@ public class ProfileInvoiceExcelViewTests
         decimal newValI3 = Convert.ToDecimal(ws.Cell(3, 9).Value.GetNumber());
         decimal newValI1 = Convert.ToDecimal(ws.Cell(1, 9).Value.GetNumber());
 
-        if (isActualCharge)
-        {
-            Assert.Equal(valH3 - targetAmount, newValH3);
-        }
-        else
-        {
-            Assert.Equal(valI3 - targetAmount, newValI3);
-        }
+        // KAAM 1: Actual charges do NOT change on Inc toggle
+        Assert.Equal(valH3, newValH3);
+        // SIRF Total Other (K) se deduct ho
+        Assert.Equal(valI3 - targetAmount, newValI3);
+        // Total Invoice = Total Actual + Total Other
         Assert.Equal(valI1 - targetAmount, newValI1);
 
         _output.WriteLine($"Live formula test PASS: Target row {targetRow} changed 1->0, amount {targetAmount} subtracted from totals.");

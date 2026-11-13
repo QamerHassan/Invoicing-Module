@@ -610,6 +610,17 @@ public class ProfileInvoicingService : IProfileInvoicingService
             var savedRows = new List<ProfileInvoiceSavedRowDto>(dryRun.Rows.Count);
             long firstPcom = 0, lastPcom = 0;
 
+            // Self-healing: Ensure NumberControl.LastNo is at least MAX(cmp_prof_invoice_code)
+            using (var syncCmd = conn.CreateCommand())
+            {
+                syncCmd.Transaction = tx;
+                syncCmd.CommandText = @"
+                    UPDATE NumberControl
+                    SET LastNo = (SELECT ISNULL(MAX(cmp_prof_invoice_code), 0) FROM dbo.Profile_invoicing)
+                    WHERE StageName = 'PCOM' AND LastNo < (SELECT ISNULL(MAX(cmp_prof_invoice_code), 0) FROM dbo.Profile_invoicing)";
+                await syncCmd.ExecuteNonQueryAsync(ct);
+            }
+
             foreach (var row in dryRun.Rows)
             {
                 // Allocate sequence number via stored proc (its own internal tran+rowlock)
@@ -632,7 +643,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         project_code, secondary_dev_code, total_usd_cost,
                         invoice_number, exchange_rate, charg_type_code,
                         support_status, interview_code, interview_seq_code,
-                        month_days, pro_rate_days, is_included
+                        month_days, pro_rate_days, is_included,
+                        to_be_discussed, is_processed
                     )
                     VALUES
                     (
@@ -645,7 +657,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         @prjCode, @secDev, @totalUsd,
                         @invNum, @exRate, @chgType,
                         @suppSts, @intCode, @intSeq,
-                        @monthDays, @proRateDays, @isIncluded
+                        @monthDays, @proRateDays, @isIncluded,
+                        0, 0
                     )";
 
                 insert.Parameters.Add(Param("@pcom",       pcomCode));
@@ -1559,8 +1572,85 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 }
             }
 
-            // Audit log
+            // Audit log tracking
             var auditLogs = new List<(string Field, string? OldVal, string? NewVal)>();
+
+            // Update Project Name if changed
+            if (request.ProjectName != null)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.Transaction = (DbTransaction)tx;
+                cmd.CommandText = @"UPDATE mkt.Projects SET Proj_name = @pname WHERE project_code = @p";
+                cmd.Parameters.Add(ParamOrNull("@pname", request.ProjectName, 200));
+                cmd.Parameters.Add(Param("@p", projectCode));
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Update Job Type if changed
+            if (request.JobType != null)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.Transaction = (DbTransaction)tx;
+                cmd.CommandText = @"UPDATE mkt.Projects SET job_type = @jtype WHERE project_code = @p";
+                cmd.Parameters.Add(ParamOrNull("@jtype", request.JobType, 50));
+                cmd.Parameters.Add(Param("@p", projectCode));
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // KAAM 1 Rule 2: Project Header Inc toggle (is_included)
+            if (request.IsIncluded.HasValue)
+            {
+                bool currInc = true;
+                using (var cmdCurr = conn.CreateCommand())
+                {
+                    cmdCurr.Transaction = (DbTransaction)tx;
+                    cmdCurr.CommandText = @"
+                        SELECT TOP 1 ISNULL(is_included, 1) 
+                        FROM dbo.Profile_invoicing
+                        WHERE project_code = @p 
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                        ORDER BY CASE WHEN resource_type = 'JH' THEN 1 WHEN resource_type = 'DR' THEN 2 ELSE 3 END";
+                    cmdCurr.Parameters.Add(Param("@p", projectCode));
+                    cmdCurr.Parameters.Add(Param("@m", cleanMonth));
+                    var currIncObj = await cmdCurr.ExecuteScalarAsync(ct);
+                    if (currIncObj != null && currIncObj != DBNull.Value)
+                    {
+                        currInc = Convert.ToBoolean(currIncObj);
+                    }
+                }
+
+                if (currInc != request.IsIncluded.Value)
+                {
+                    using var cmdInc = conn.CreateCommand();
+                    cmdInc.Transaction = (DbTransaction)tx;
+                    cmdInc.CommandText = @"
+                        UPDATE dbo.Profile_invoicing
+                        SET is_included = @inc
+                        WHERE project_code = @p
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                          AND (resource_type IN ('JH', 'DR') OR resource_type IS NULL)";
+                    cmdInc.Parameters.Add(Param("@inc", request.IsIncluded.Value ? 1 : 0));
+                    cmdInc.Parameters.Add(Param("@p", projectCode));
+                    cmdInc.Parameters.Add(Param("@m", cleanMonth));
+                    int affected = await cmdInc.ExecuteNonQueryAsync(ct);
+                    if (affected == 0)
+                    {
+                        using var cmdFallback = conn.CreateCommand();
+                        cmdFallback.Transaction = (DbTransaction)tx;
+                        cmdFallback.CommandText = @"
+                            UPDATE dbo.Profile_invoicing
+                            SET is_included = @inc
+                            WHERE project_code = @p
+                              AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
+                        cmdFallback.Parameters.Add(Param("@inc", request.IsIncluded.Value ? 1 : 0));
+                        cmdFallback.Parameters.Add(Param("@p", projectCode));
+                        cmdFallback.Parameters.Add(Param("@m", cleanMonth));
+                        await cmdFallback.ExecuteNonQueryAsync(ct);
+                    }
+
+                    auditLogs.Add(("is_included", currInc ? "1" : "0", request.IsIncluded.Value ? "1" : "0"));
+                }
+            }
             if (request.AgreedRate.HasValue && request.AgreedRate.Value != currRate)
             {
                 auditLogs.Add(("agreed_rate", currRate.ToString("0.##"), request.AgreedRate.Value.ToString("0.##")));
@@ -2059,14 +2149,12 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
 
             // Project total = sum(Round(total_usd_cost, 0)) + projShare
+            // KAAM 1 Rule 4: Total Cost / Total USD sum par IsIncluded ka asar NA ho
             decimal projTotal = 0;
             foreach (var kRow in block.Rows)
             {
-                if (kRow.IsIncluded)
-                {
-                    decimal kFinal = Math.Round(kRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
-                    projTotal += kFinal;
-                }
+                decimal kFinal = Math.Round(kRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
+                projTotal += kFinal;
             }
 
             if (curProj > 0)
@@ -2157,6 +2245,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 : "";
 
             bool projHasIncluded = block.Rows.Any(r => r.IsIncluded);
+            bool projHeaderIncluded = true;
 
             // Days calculation & Actual Charges
             string hoursDays = "";
@@ -2180,10 +2269,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     {
                         decimal act = Math.Round(curProjRate / (decimal)monthDays * (decimal)proDays, 0, MidpointRounding.AwayFromZero);
                         actualCharges = act;
-                        if (projHasIncluded)
-                        {
-                            sumActual += act;
-                        }
+                        sumActual += act;
                     }
                 }
             }
@@ -2191,7 +2277,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
             // If curProj > 0, output Project Header Row
             if (curProj > 0)
             {
-                if (projHasIncluded && curProjRate > 0)
+                // KAAM 1 Rule 4: Total Agreed (H) par IsIncluded ka koi asar NA ho
+                if (curProjRate > 0)
                 {
                     sumAgreed += curProjRate;
                 }
@@ -2199,7 +2286,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 result.Rows.Add(new ProfileInvoiceExcelViewRowDto
                 {
                     RowType = "ProjectHeader",
-                    IsIncluded = projHasIncluded,
+                    IsIncluded = projHeaderIncluded,
                     IsExecutive = string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase),
                     ProfileOwner = ownerDisp,
                     ProjectCode = curProj,
@@ -2401,10 +2488,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 else
                 {
                     // Standalone row (curProj == 0)
-                    if (dRow.IsIncluded)
-                    {
-                        sumCost += finalUsd;
-                    }
+                    // KAAM 1 Rule 4: Total Cost / Total USD par IsIncluded ka koi asar NA ho
+                    sumCost += finalUsd;
                     result.Rows.Add(new ProfileInvoiceExcelViewRowDto
                     {
                         RowType = "Standalone",
@@ -2418,7 +2503,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
-                        TotalCost = dRow.IsIncluded ? finalUsd : (decimal?)null,
+                        TotalCost = finalUsd,
                         OtherCharge = isOther ? finalUsd : null,
                         ChargedAmtPkr = isOther ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = isOther ? dRow.ExchangeRate : null,
@@ -2573,7 +2658,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
         ApplyBase(c3G, bold: true);
 
         var c3H = ws.Cell(3, 8);
-        c3H.FormulaA1 = $"SUMIF(J5:J{lastRow}, 1, H5:H{lastRow})";
+        c3H.FormulaA1 = $"SUM(H5:H{lastRow})";
         ApplyBase(c3H, bold: true, color: redColor);
         c3H.Style.NumberFormat.Format = numFmt;
 

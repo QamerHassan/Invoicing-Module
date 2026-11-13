@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, 
   Search, 
@@ -18,6 +18,7 @@ import type {
 import { formatMoney } from '../utils/format';
 import { ProfileInvoiceExcelView } from './ProfileInvoiceExcelView';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
+import { LoadingIndicator } from './LoadingIndicator';
 
 const SERVICE_HEAD_MAP: Record<string, string> = {
   'JH': 'Job Holder',
@@ -76,7 +77,11 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
 }) => {
   const [groupOwners, setGroupOwners] = useState<ProfileGroupOwnerDto[]>([]);
   const [selectedOwnerCode, setSelectedOwnerCode] = useState<number | ''>('');
-  const [selectedOwnerName, setSelectedOwnerName] = useState<string>('');
+  const selectedOwnerName = useMemo(() => {
+    if (!selectedOwnerCode) return '';
+    const owner = groupOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode));
+    return owner?.profileName ?? '';
+  }, [groupOwners, selectedOwnerCode]);
   const [monthYear, setMonthYear] = useState<string>(initialMonth.replace('-', '').toUpperCase());
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [monthsLoading, setMonthsLoading] = useState<boolean>(false);
@@ -194,7 +199,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
         setGroupOwners(owners);
         if (owners.length > 0 && !selectedOwnerCode) {
           setSelectedOwnerCode(owners[0].prfOwnCode);
-          setSelectedOwnerName(owners[0].profileName ?? '');
         }
       } catch (err: any) {
         console.error('Failed to load profile group owners', err);
@@ -582,8 +586,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   value={selectedOwnerCode}
                   onChange={(val) => {
                     setSelectedOwnerCode(val);
-                    const owner = groupOwners.find(o => o.prfOwnCode === val);
-                    setSelectedOwnerName(owner?.profileName ?? '');
                   }}
                   allowAll={false}
                   placeholder="Select Profile Group Owner..."
@@ -913,10 +915,16 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
             </tr>
           </thead>
           <tbody>
-            {filteredRows.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={20} style={{ padding: '3rem' }}>
+                  <LoadingIndicator message="Loading profile invoice rows..." />
+                </td>
+              </tr>
+            ) : filteredRows.length === 0 ? (
               <tr>
                 <td colSpan={20} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  {loading ? 'Loading...' : 'No profile invoice rows loaded. Select an owner and month, then click "Generate Preview (Dry-Run)" or "Load Saved".'}
+                  No profile invoice rows loaded. Select an owner and month, then click "Generate Preview (Dry-Run)" or "Load Saved".
                 </td>
               </tr>
             ) : (

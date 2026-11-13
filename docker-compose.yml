@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      - ConnectionStrings__InvoicingDb=Server=rizviz-db.c9o28ky2q7ah.ap-southeast-2.rds.amazonaws.com,1433;Database=Invoicing_System;User Id=admin;Password=Rizviz5121472;TrustServerCertificate=True;MultipleActiveResultSets=True;
+      - ConnectionStrings__InvoicingDb=${ConnectionStrings__InvoicingDb}
       - Jwt__Key=super_secret_enterprise_grade_key_must_be_32_bytes_long_min!
       - ASPNETCORE_HTTP_PORTS=10000
       - ASPNETCORE_URLS=http://+:10000
@@ -28,3 +28,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+

@@ -10,6 +10,7 @@ import type {
   ProfileInvoiceRowDto
 } from '../types';
 import { formatMoney } from '../utils/format';
+import { LoadingIndicator } from './LoadingIndicator';
 
 interface Props {
   groupOwners: ProfileGroupOwnerDto[];
@@ -438,14 +439,18 @@ export const ProfileInvoiceToBeDiscussedTab: React.FC<Props> = ({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={12} style={{ padding: '2.5rem' }}>
+                  <LoadingIndicator message="Loading To Be Discussed items..." />
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={12} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  {loading
-                    ? 'Loading...'
-                    : month
-                      ? 'No items to be discussed for this month / owner. ✓'
-                      : 'Enter a month above to load data.'}
+                  {month
+                    ? 'No items to be discussed for this month / owner. ✓'
+                    : 'Enter a month above to load data.'}
                 </td>
               </tr>
             ) : (
@@ -683,7 +688,7 @@ export const ProfileInvoiceToBeDiscussedTab: React.FC<Props> = ({
             {/* Modal List */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
               {modalLoading ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading invoices…</div>
+                <LoadingIndicator message="Loading invoices..." />
               ) : filteredModal.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                   {availableInvoices.length === 0 ? 'No saved invoices found for this month / owner.' : 'No matches for your search.'}

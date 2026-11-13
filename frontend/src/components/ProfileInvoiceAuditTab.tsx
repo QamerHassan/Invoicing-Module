@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileGroupOwnerDto, ProfileInvoiceAuditLogDto } from '../types';
+import { LoadingIndicator } from './LoadingIndicator';
 
 interface Props {
   groupOwners: ProfileGroupOwnerDto[];
@@ -176,10 +177,16 @@ export const ProfileInvoiceAuditTab: React.FC<Props> = ({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={10} style={{ padding: '2.5rem' }}>
+                  <LoadingIndicator message="Loading change history..." />
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={10} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  {loading ? 'Loading changes...' : month ? 'No changes recorded for this selection.' : 'Enter a month to view change history.'}
+                  {month ? 'No changes recorded for this selection.' : 'Enter a month to view change history.'}
                 </td>
               </tr>
             ) : (

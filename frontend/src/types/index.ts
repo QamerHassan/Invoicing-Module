@@ -249,6 +249,13 @@ export interface ProfileInvoiceProjectUpdateRequest {
   proRateDays?: number | null;
   monthDays?: number | null;
   salaryRate?: string | null;
+  isIncluded?: boolean | null;
+  projectName?: string | null;
+  jobType?: string | null;
+  projStatus?: string | null;
+  startEndDate?: string | null;
+  profileNature?: string | null;
+  stack?: string | null;
   monthYear: string;
   groupOwnerCode: number;
 }
@@ -337,6 +344,7 @@ export interface SendProfileInvoiceEmailRequest {
   rememberSettings?: boolean;
   processedOnly?: boolean;
   excludeToBeDiscussed?: boolean;
+  specificCodes?: number[];
 }
 
 export interface UserEmailSettingsDto {
