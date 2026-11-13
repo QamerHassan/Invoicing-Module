@@ -558,10 +558,10 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               <thead>
                 <tr>
                   <th style={{ textAlign: 'center', width: '40px' }}>#</th>
-                  <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Name</th>
+                  <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Owner Name</th>
                   <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
-                  <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
-                  <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
+                  <th style={{ minWidth: '110px', textAlign: 'center' }}>Total Invoices</th>
+                  <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Amount (USD)</th>
                   <th style={{ minWidth: '90px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
@@ -586,8 +586,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
                         {p.month}
                       </td>
-                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
-                        {p.rowsCount} rows
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
+                        {p.rowsCount.toLocaleString()}
                       </td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
                         {fmtUsd(p.totalInvoice)}
@@ -618,7 +618,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                           title={`Compose invoice email for ${p.ownerName}`}
                         >
                           <Mail size={11} />
-                          <span>Email</span>
+                          <span>Send Email</span>
                         </button>
                       </td>
                     </tr>

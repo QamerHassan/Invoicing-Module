@@ -1779,6 +1779,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
         // 1b. Check if rows exist in dbo.Profile_invoicing for effectiveGroupCode + month.
         // If not, auto-generate them seamlessly from company invoicing and marketing sources.
         // Auto-generation is only performed for active/unprocessed view, NOT for processedOnly.
+        // IMPORTANT: use the same OR filter as the data query (prfgrp_own_code OR prfown_code)
+        // to avoid false-zero when rows exist via prfown_code but prfgrp_own_code is NULL.
         if (!processedOnly)
         {
             int existingCount = 0;
@@ -1787,7 +1789,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmd.CommandText = @"
                     SELECT COUNT(*)
                     FROM dbo.Profile_invoicing
-                    WHERE prfgrp_own_code = @grp
+                    WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
                       AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
                 cmd.Parameters.Add(Param("@grp", effectiveGroupCode));
                 cmd.Parameters.Add(Param("@m", cleanMonth));
@@ -2955,7 +2957,30 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         foreach (var oCode in ownerCodes)
         {
-            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: true, ct: ct, excludeToBeDiscussed: true);
+            // Grand totals: all processed rows for this owner (excludeToBeDiscussed=false so counts are complete)
+            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: true, ct: ct, excludeToBeDiscussed: false);
+
+            // Count and sum directly from DB for accuracy (not filtered by excludeToBeDiscussed)
+            int totalInvoiceCount = 0;
+            decimal totalUsd = 0;
+            using (var cmdSums = conn.CreateCommand())
+            {
+                cmdSums.CommandText = @"
+                    SELECT COUNT(*), ISNULL(SUM(ISNULL(total_usd_cost, 0)), 0)
+                    FROM dbo.Profile_invoicing
+                    WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
+                      AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
+                      AND is_processed = 1";
+                cmdSums.Parameters.Add(Param("@grp", oCode));
+                cmdSums.Parameters.Add(Param("@m", cleanMonth));
+                using var sRdr = await cmdSums.ExecuteReaderAsync(ct);
+                if (await sRdr.ReadAsync(ct))
+                {
+                    totalInvoiceCount = Convert.ToInt32(sRdr.GetValue(0));
+                    totalUsd = Convert.ToDecimal(sRdr.GetValue(1));
+                }
+            }
+
             var invoiceCodes = view.Rows
                 .SelectMany(r => (r.ChildInvoiceCodes ?? new List<long>()).Concat(r.CmpProfInvoiceCode.HasValue ? new[] { r.CmpProfInvoiceCode.Value } : Array.Empty<long>()))
                 .Where(c => c > 0)
@@ -2986,10 +3011,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 OwnerName = string.IsNullOrWhiteSpace(view.GroupOwnerName) ? $"Owner #{oCode}" : view.GroupOwnerName,
                 Month = cleanMonth,
                 TotalCost = view.TotalCostSum,
-                TotalInvoice = view.TotalInvoice,
+                TotalInvoice = Math.Round(totalUsd, 0),
                 TotalActual = view.ActualChargesSum,
                 TotalOther = view.OtherChargeSum,
-                RowsCount = invoiceCodes.Count,
+                RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,
                 InvoiceCodes = invoiceCodes
             });
         }
