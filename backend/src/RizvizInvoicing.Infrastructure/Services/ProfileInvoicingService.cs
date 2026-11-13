@@ -2447,7 +2447,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     || string.Equals(serviceHead, "Support", StringComparison.OrdinalIgnoreCase);
 
                 bool rowInc = dRow.IsIncluded;
-                bool isRowOther = isOther || (isDefaultUncheckedHead && rowInc);
+                bool isRowOther = (isOther || isDefaultUncheckedHead) && rowInc;
 
                 if (isRowOther && rowInc)
                 {
