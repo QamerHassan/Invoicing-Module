@@ -4,11 +4,30 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
+    env_file:
+      - .env
     environment:
       - ConnectionStrings__InvoicingDb=${ConnectionStrings__InvoicingDb}
-      - Jwt__Key=super_secret_enterprise_grade_key_must_be_32_bytes_long_min!
+      - Jwt__Key=${Jwt__Key:-super_secret_enterprise_grade_key_must_be_32_bytes_long_min!}
       - ASPNETCORE_HTTP_PORTS=10000
       - ASPNETCORE_URLS=http://+:10000
+      # SMTP – forwarded from EC2 .env into the container
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_EMAIL=${SMTP_USER}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_APP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Rizviz Invoicing}
+      - SMTP_SSL=${SMTP_SSL:-true}
+      # ASP.NET Core config hierarchy keys (Smtp:*)
+      - Smtp__Host=${SMTP_HOST:-smtp.gmail.com}
+      - Smtp__Port=${SMTP_PORT:-587}
+      - Smtp__Email=${SMTP_USER}
+      - Smtp__AppPassword=${SMTP_PASSWORD}
+      - Smtp__Password=${SMTP_PASSWORD}
+      - Smtp__FromName=${SMTP_FROM_NAME:-Rizviz Invoicing}
     expose:
       - "10000"
 

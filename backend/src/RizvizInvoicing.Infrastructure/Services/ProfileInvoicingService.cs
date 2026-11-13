@@ -1829,7 +1829,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             {
                 ownerFilter = "(pi.prfgrp_own_code = @grp OR pi.prfown_code = @grp)";
             }
-            string processedFilter = processedOnly ? "pi.is_processed = 1" : "(pi.is_processed = 0 OR pi.is_processed IS NULL)";
+            string processedFilter = processedOnly ? "AND pi.is_processed = 1" : "";
             string discussedFilter = excludeToBeDiscussed ? "AND (pi.to_be_discussed = 0 OR pi.to_be_discussed IS NULL)" : "";
 
             cmd.CommandText = $@"
@@ -1845,7 +1845,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pi.prfown_code
                 WHERE {ownerFilter} 
                   AND REPLACE(RTRIM(pi.invoice_month), '-', '') = @m
-                  AND {processedFilter}
+                  {processedFilter}
                   {discussedFilter}
                 ORDER BY COALESCE(pi.prfown_code, 0) ASC,
                          COALESCE(pi.project_code, 0) ASC,
