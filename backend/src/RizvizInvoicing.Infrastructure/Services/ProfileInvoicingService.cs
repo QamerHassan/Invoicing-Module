@@ -2517,10 +2517,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
                         TotalCost = finalUsd,
-                        OtherCharge = isOther ? finalUsd : null,
-                        ChargedAmtPkr = isOther ? dRow.ChargedAmtPkr : null,
-                        ExchangeRate = isOther ? dRow.ExchangeRate : null,
-                        ShareAmount = isOther ? dRow.ShareAmount : null,
+                        OtherCharge = (isOther && dRow.IsIncluded) ? finalUsd : null,
+                        ChargedAmtPkr = (isOther && dRow.IsIncluded) ? dRow.ChargedAmtPkr : null,
+                        ExchangeRate = (isOther && dRow.IsIncluded) ? dRow.ExchangeRate : null,
+                        ShareAmount = (isOther && dRow.IsIncluded) ? dRow.ShareAmount : null,
                         StartEndDate = startEndDate,
                         ToBeDiscussed = dRow.ToBeDiscussed,
                         IsToBeDiscussed = dRow.ToBeDiscussed,
@@ -2703,8 +2703,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
         // Helper to apply row-level formulas for Other Charge (PKR to USD) in Col 9 (I)
         void ApplyOtherChargeFormula(int rowNum, ProfileInvoiceExcelViewRowDto rowDto)
         {
-            // If row is not included (is_included = 0 / false), do NOT show any value in Other Charge!
-            if (rowDto.IsIncluded == false)
+            // Only show Other Charge if row is explicitly INCLUDED (IsIncluded == true)!
+            // If unchecked (false or null), do NOT show any value in Other Charge!
+            if (rowDto.IsIncluded != true)
             {
                 return;
             }
@@ -2780,17 +2781,20 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 }
 
                 // Live formula for Actual Charges (Col H / Col 8, referring to Col F Agreed Rate)
-                if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                if (r.IsIncluded != false)
                 {
-                    ws.Cell(currentRow, 8).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(F{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(F{currentRow}, 0))";
-                    ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                    ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
-                }
-                else if (r.ActualCharges.HasValue)
-                {
-                    ws.Cell(currentRow, 8).FormulaA1 = $"ROUND(F{currentRow}, 0)";
-                    ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                    ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                    if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                    {
+                        ws.Cell(currentRow, 8).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(F{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(F{currentRow}, 0))";
+                        ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                        ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                    }
+                    else if (r.ActualCharges.HasValue)
+                    {
+                        ws.Cell(currentRow, 8).FormulaA1 = $"ROUND(F{currentRow}, 0)";
+                        ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                        ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                    }
                 }
 
                 if (!string.IsNullOrEmpty(r.SalaryRate))
