@@ -2915,6 +2915,88 @@ public class ProfileInvoicingService : IProfileInvoicingService
         return list;
     }
 
+    public async Task<List<ProfileInvoiceProcessedProfileDto>> GetProcessedProfilesAsync(
+        string month, int? groupOwnerCode = null, CancellationToken ct = default)
+    {
+        string cleanMonth = (month ?? "").Trim().Replace("-", "").ToUpperInvariant();
+        var list = new List<ProfileInvoiceProcessedProfileDto>();
+
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        var ownerCodes = new List<int>();
+        using (var cmd = conn.CreateCommand())
+        {
+            string sql = @"
+                SELECT DISTINCT 
+                    ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS owner_code
+                FROM dbo.Profile_invoicing pi
+                WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
+                  AND pi.is_processed = 1
+                  AND ISNULL(pi.prfgrp_own_code, pi.prfown_code) > 0";
+
+            if (groupOwnerCode.HasValue && groupOwnerCode.Value > 0)
+            {
+                sql += " AND (pi.prfgrp_own_code = @grp OR pi.prfown_code = @grp)";
+                cmd.Parameters.Add(Param("@grp", groupOwnerCode.Value));
+            }
+
+            sql += " ORDER BY owner_code";
+            cmd.CommandText = sql;
+            cmd.Parameters.Add(Param("@m", cleanMonth));
+
+            using var rdr = await cmd.ExecuteReaderAsync(ct);
+            while (await rdr.ReadAsync(ct))
+            {
+                ownerCodes.Add(Convert.ToInt32(rdr.GetValue(0)));
+            }
+        }
+
+        foreach (var oCode in ownerCodes)
+        {
+            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: true, ct: ct, excludeToBeDiscussed: true);
+            var invoiceCodes = view.Rows
+                .SelectMany(r => (r.ChildInvoiceCodes ?? new List<long>()).Concat(r.CmpProfInvoiceCode.HasValue ? new[] { r.CmpProfInvoiceCode.Value } : Array.Empty<long>()))
+                .Where(c => c > 0)
+                .Distinct()
+                .ToList();
+
+            if (invoiceCodes.Count == 0)
+            {
+                using var cmdCodes = conn.CreateCommand();
+                cmdCodes.CommandText = @"
+                    SELECT cmp_prof_invoice_code 
+                    FROM dbo.Profile_invoicing 
+                    WHERE (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
+                      AND (prfgrp_own_code = @grp OR prfown_code = @grp)
+                      AND is_processed = 1";
+                cmdCodes.Parameters.Add(Param("@m", cleanMonth));
+                cmdCodes.Parameters.Add(Param("@grp", oCode));
+                using var cRdr = await cmdCodes.ExecuteReaderAsync(ct);
+                while (await cRdr.ReadAsync(ct))
+                {
+                    invoiceCodes.Add(Convert.ToInt64(cRdr.GetValue(0)));
+                }
+            }
+
+            list.Add(new ProfileInvoiceProcessedProfileDto
+            {
+                OwnerCode = oCode,
+                OwnerName = string.IsNullOrWhiteSpace(view.GroupOwnerName) ? $"Owner #{oCode}" : view.GroupOwnerName,
+                Month = cleanMonth,
+                TotalCost = view.TotalCostSum,
+                TotalInvoice = view.TotalInvoice,
+                TotalActual = view.ActualChargesSum,
+                TotalOther = view.OtherChargeSum,
+                RowsCount = invoiceCodes.Count,
+                InvoiceCodes = invoiceCodes
+            });
+        }
+
+        return list.OrderBy(p => p.OwnerName).ToList();
+    }
+
     public async Task<(int UnprocessedCount, decimal UnprocessedUsd, string OwnerName)> GetOwnerUnprocessedStatusAsync(
         int ownerCode, string month, CancellationToken ct = default)
     {

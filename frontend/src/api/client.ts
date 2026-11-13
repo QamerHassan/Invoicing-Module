@@ -25,6 +25,7 @@ import type {
   ProfileGroupOwnerDto,
   ProfileInvoiceExcelViewResult,
   SendProfileInvoiceEmailRequest,
+  ProfileInvoiceProcessedProfileDto,
   ProfileInvoiceProcessedRowDto,
   ProfileInvoiceUnprocessedResult,
   ProfileInvoiceGenerateOpenResult,
@@ -458,6 +459,20 @@ export const api = {
       body: JSON.stringify(request)
     });
     return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async getProcessedProfiles(groupOwnerCode?: number, monthYear: string = 'OCT26'): Promise<ProfileInvoiceProcessedProfileDto[]> {
+    const encoded = encodeURIComponent(monthYear || 'OCT26');
+    const grpParam = groupOwnerCode && groupOwnerCode > 0 ? `&groupOwnerCode=${groupOwnerCode}&ownerCode=${groupOwnerCode}` : '';
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/processed-profiles?month=${encoded}&monthYear=${encoded}${grpParam}&_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        ...getAuthHeader(),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
+    return handleResponse<ProfileInvoiceProcessedProfileDto[]>(res);
   },
 
   async getProcessedInvoices(groupOwnerCode?: number, monthYear: string = 'SEP26'): Promise<ProfileInvoiceProcessedRowDto[]> {

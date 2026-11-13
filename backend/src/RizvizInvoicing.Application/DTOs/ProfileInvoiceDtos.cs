@@ -383,6 +383,21 @@ public class ProfileInvoiceProcessRequest
 public class ProfileInvoiceUnprocessRequest
 {
     public List<long> Codes { get; set; } = new();
+    public List<int>? OwnerCodes { get; set; }
+    public string? Month { get; set; }
+}
+
+public class ProfileInvoiceProcessedProfileDto
+{
+    public int OwnerCode { get; set; }
+    public string OwnerName { get; set; } = string.Empty;
+    public string Month { get; set; } = string.Empty;
+    public decimal TotalCost { get; set; }
+    public decimal TotalInvoice { get; set; }
+    public decimal TotalActual { get; set; }
+    public decimal TotalOther { get; set; }
+    public int RowsCount { get; set; }
+    public List<long> InvoiceCodes { get; set; } = new();
 }
 
 public class ProfileInvoiceProcessByOwnerRequest

@@ -71,6 +71,11 @@ public interface IProfileInvoicingService
     Task<List<ProfileInvoiceProcessedRowDto>> GetProcessedInvoicesAsync(string month, int? groupOwnerCode = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Get profile-wise aggregate of processed invoices (owner code, name, month, total cost, total invoice, rows count).
+    /// </summary>
+    Task<List<ProfileInvoiceProcessedProfileDto>> GetProcessedProfilesAsync(string month, int? groupOwnerCode = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Check unprocessed invoices count and pending amount for a specific profile owner + month.
     /// </summary>
     Task<(int UnprocessedCount, decimal UnprocessedUsd, string OwnerName)> GetOwnerUnprocessedStatusAsync(

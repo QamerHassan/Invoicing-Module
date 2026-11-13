@@ -1522,21 +1522,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         borderRight: '1px solid var(--border-subtle)',
                         borderBottom: '2px solid var(--border-medium)',
                         padding: '4px 8px',
-                        textAlign: 'right',
+                        textAlign: 'center',
                         verticalAlign: 'middle',
                         position: 'sticky',
                         top: 0,
                         zIndex: 12
                       }}
                     >
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                        <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
-                          TOTAL AGREED
-                        </div>
-                        <div style={{ fontSize: '1.12rem', fontWeight: 900, color: 'var(--excel-agreed-color)', fontFamily: 'var(--font-mono)' }}>
-                          ${(data.agreedRateSum ?? 0).toLocaleString()}
-                        </div>
-                      </div>
+                      <span style={{ fontSize: '0.70rem', color: 'var(--text-subtle)' }}>—</span>
                     </th>
 
                     {/* Column 9: Directly above Hrs/Dys (I) */}

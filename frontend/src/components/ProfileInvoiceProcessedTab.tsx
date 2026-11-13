@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X } from 'lucide-react';
 import { api } from '../api/client';
-import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedRowDto } from '../types';
+import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedProfileDto } from '../types';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 import { LoadingIndicator } from './LoadingIndicator';
 
@@ -18,15 +18,15 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   initialMonth,
   onRefreshUnprocessed
 }) => {
-  const [month, setMonth] = useState(initialMonth || '');
+  const [month, setMonth] = useState(initialMonth || 'OCT26');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
-  const [rows, setRows] = useState<ProfileInvoiceProcessedRowDto[]>([]);
+  const [profiles, setProfiles] = useState<ProfileInvoiceProcessedProfileDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [selectedCodes, setSelectedCodes] = useState<Set<number>>(new Set());
+  const [selectedOwnerCodes, setSelectedOwnerCodes] = useState<Set<number>>(new Set());
 
   // Sync with parent props
   useEffect(() => {
@@ -50,11 +50,11 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getProcessedInvoices(ownerCode !== '' ? ownerCode : undefined, month);
-      setRows(Array.isArray(data) ? data : []);
-      setSelectedCodes(new Set()); // Reset selection on reload
+      const data = await api.getProcessedProfiles(ownerCode !== '' ? ownerCode : undefined, month);
+      setProfiles(Array.isArray(data) ? data : []);
+      setSelectedOwnerCodes(new Set()); // Reset selection on reload
     } catch (err: any) {
-      flashError(err?.message || 'Failed to load processed invoices.');
+      flashError(err?.message || 'Failed to load processed profiles.');
     } finally {
       setLoading(false);
     }
@@ -65,33 +65,33 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     load();
   }, [load]);
 
-  const filteredRows = useMemo(() => {
-    if (!search.trim()) return rows;
+  const filteredProfiles = useMemo(() => {
+    if (!search.trim()) return profiles;
     const q = search.trim().toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
-    return rows.filter(r => {
-      const text = `${r.profileName || ''} ${r.projectName || ''} ${r.stack || ''} ${r.invoiceToName || ''} ${r.invoiceMonth || ''} ${r.cmpProfInvoiceCode}`.toLowerCase();
+    return profiles.filter(p => {
+      const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
       return words.every(w => text.includes(w));
     });
-  }, [rows, search]);
+  }, [profiles, search]);
 
   const allFilteredCodes = useMemo(() => {
-    return filteredRows.map(r => r.cmpProfInvoiceCode);
-  }, [filteredRows]);
+    return filteredProfiles.map(p => p.ownerCode);
+  }, [filteredProfiles]);
 
-  const isAllSelected = allFilteredCodes.length > 0 && allFilteredCodes.every(c => selectedCodes.has(c));
-  const someSelected = selectedCodes.size > 0;
+  const isAllSelected = allFilteredCodes.length > 0 && allFilteredCodes.every(c => selectedOwnerCodes.has(c));
+  const someSelected = selectedOwnerCodes.size > 0;
 
   const handleToggleSelectAll = () => {
     if (isAllSelected) {
-      setSelectedCodes(new Set());
+      setSelectedOwnerCodes(new Set());
     } else {
-      setSelectedCodes(new Set(allFilteredCodes));
+      setSelectedOwnerCodes(new Set(allFilteredCodes));
     }
   };
 
-  const handleToggleRow = (code: number) => {
-    setSelectedCodes(prev => {
+  const handleToggleOwner = (code: number) => {
+    setSelectedOwnerCodes(prev => {
       const next = new Set(prev);
       if (next.has(code)) {
         next.delete(code);
@@ -102,53 +102,62 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     });
   };
 
+  // Grand totals
+  const totalCostSum = useMemo(() => {
+    return filteredProfiles.reduce((acc, p) => acc + (p.totalCost || 0), 0);
+  }, [filteredProfiles]);
+
+  const totalRowsSum = useMemo(() => {
+    return filteredProfiles.reduce((acc, p) => acc + (p.rowsCount || 0), 0);
+  }, [filteredProfiles]);
+
   // Undo / Move back to Unprocessed
   const handleBatchUnprocess = async () => {
-    if (selectedCodes.size === 0) return;
-    const count = selectedCodes.size;
-    const confirmed = window.confirm(`Move ${count} selected invoice(s) back to Unprocessed?`);
+    if (selectedOwnerCodes.size === 0) return;
+    const selectedList = profiles.filter(p => selectedOwnerCodes.has(p.ownerCode));
+    const allInvoiceCodes = selectedList.flatMap(p => p.invoiceCodes);
+    const count = selectedOwnerCodes.size;
+
+    const confirmed = window.confirm(`Move ${count} selected profile(s) (${allInvoiceCodes.length} invoices) back to Unprocessed?`);
     if (!confirmed) return;
 
     setActionLoading(true);
     try {
-      const res = await api.unprocessInvoices(Array.from(selectedCodes));
-      flashSuccess(res.message || `${count} invoice(s) moved back to Unprocessed.`);
-      setSelectedCodes(new Set());
+      const res = await api.unprocessInvoices(allInvoiceCodes);
+      flashSuccess(res.message || `${count} profile(s) moved back to Unprocessed.`);
+      setSelectedOwnerCodes(new Set());
       await load();
       onRefreshUnprocessed?.();
     } catch (err: any) {
-      flashError(err?.message || 'Failed to unprocess invoices.');
+      flashError(err?.message || 'Failed to unprocess selected profiles.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleSingleUnprocess = async (code: number) => {
-    const confirmed = window.confirm('Move this invoice back to Unprocessed?');
+  const handleSingleUnprocess = async (p: ProfileInvoiceProcessedProfileDto) => {
+    const confirmed = window.confirm(`Move profile "${p.ownerName}" (${p.rowsCount} invoices) back to Unprocessed?`);
     if (!confirmed) return;
     setActionLoading(true);
     try {
-      const res = await api.unprocessInvoices([code]);
-      flashSuccess(res.message || 'Invoice moved back to Unprocessed.');
-      setSelectedCodes(prev => {
+      const res = await api.unprocessInvoices(p.invoiceCodes);
+      flashSuccess(res.message || `Profile "${p.ownerName}" moved back to Unprocessed.`);
+      setSelectedOwnerCodes(prev => {
         const next = new Set(prev);
-        next.delete(code);
+        next.delete(p.ownerCode);
         return next;
       });
       await load();
       onRefreshUnprocessed?.();
     } catch (err: any) {
-      flashError(err?.message || 'Failed to unprocess invoice.');
+      flashError(err?.message || 'Failed to unprocess profile.');
     } finally {
       setActionLoading(false);
     }
   };
 
   const fmtUsd = (v: number) =>
-    v == null ? '' : '$' + Math.round(v).toLocaleString();
-
-  const fmtPkr = (v: number) =>
-    v == null ? '' : 'Rs ' + Math.round(v).toLocaleString();
+    v == null ? '$0' : '$' + Math.round(v).toLocaleString();
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
@@ -182,7 +191,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
             type="text"
             value={month}
             onChange={e => setMonth(e.target.value.toUpperCase())}
-            placeholder="SEP26"
+            placeholder="OCT26"
             maxLength={7}
             style={{
               background: 'var(--bg-surface)',
@@ -228,10 +237,10 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
               opacity: someSelected ? 1 : 0.6,
               transition: 'all 0.15s ease'
             }}
-            title={someSelected ? `Move ${selectedCodes.size} invoice(s) back to Unprocessed` : 'Select rows to undo'}
+            title={someSelected ? `Move ${selectedOwnerCodes.size} profile(s) back to Unprocessed` : 'Select profiles to undo'}
           >
             <RotateCcw size={12} className={actionLoading ? 'spin' : ''} />
-            {actionLoading ? 'Moving...' : `Undo to Unprocessed ${someSelected ? `(${selectedCodes.size})` : ''}`}
+            {actionLoading ? 'Moving...' : `Undo to Unprocessed ${someSelected ? `(${selectedOwnerCodes.size})` : ''}`}
           </button>
 
           {/* Search */}
@@ -288,11 +297,11 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
               padding: '1px 8px',
               fontFamily: 'var(--font-mono)'
             }}>
-              Selected: {selectedCodes.size} of {filteredRows.length}
+              Selected: {selectedOwnerCodes.size} of {filteredProfiles.length}
             </span>
           )}
           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {filteredRows.length} row{filteredRows.length !== 1 ? 's' : ''}
+            {filteredProfiles.length} profile{filteredProfiles.length !== 1 ? 's' : ''}
           </span>
         </div>
       </div>
@@ -330,7 +339,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
       {/* Table */}
       <div className="compact-table-container">
         {loading ? (
-          <LoadingIndicator message="Loading processed invoices..." fullHeight />
+          <LoadingIndicator message="Loading processed profiles..." fullHeight />
         ) : (
           <table className="compact-table">
             <thead>
@@ -340,94 +349,73 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                     type="checkbox"
                     checked={isAllSelected}
                     onChange={handleToggleSelectAll}
-                    disabled={filteredRows.length === 0}
+                    disabled={filteredProfiles.length === 0}
                     style={{ cursor: 'pointer', width: '13px', height: '13px' }}
                     title={isAllSelected ? 'Deselect All' : 'Select All'}
                   />
                 </th>
                 <th style={{ textAlign: 'center', width: '40px' }}>#</th>
-                <th style={{ minWidth: '130px', textAlign: 'left' }}>Profile Owner</th>
-                <th style={{ minWidth: '80px', textAlign: 'left' }}>Stack</th>
-                <th style={{ minWidth: '130px', textAlign: 'left' }}>Project</th>
-                <th style={{ minWidth: '120px', textAlign: 'left' }}>Invoice To</th>
-                <th style={{ minWidth: '65px', textAlign: 'center' }}>Month</th>
-                <th style={{ minWidth: '70px', textAlign: 'right' }}>Charged USD</th>
-                <th style={{ minWidth: '80px', textAlign: 'right' }}>Charged PKR</th>
-                <th style={{ minWidth: '55px', textAlign: 'center' }}>Status</th>
-                <th style={{ minWidth: '100px', textAlign: 'left' }}>Insert By</th>
-                <th style={{ minWidth: '65px', textAlign: 'center' }}>Action</th>
+                <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Name</th>
+                <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
+                <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
+                <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Cost</th>
+                <th style={{ minWidth: '80px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length === 0 ? (
+              {filteredProfiles.length === 0 ? (
                 <tr>
-                  <td colSpan={12} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    {search ? `No processed invoices matching "${search}".` : 'No processed invoices found.'}
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {search ? `No processed profiles matching "${search}".` : 'No processed invoices found for this month.'}
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((r, i) => {
-                  const isChecked = selectedCodes.has(r.cmpProfInvoiceCode);
+                filteredProfiles.map((p, i) => {
+                  const isChecked = selectedOwnerCodes.has(p.ownerCode);
                   return (
                     <tr
-                      key={r.cmpProfInvoiceCode}
+                      key={p.ownerCode}
                       className="table-row-hover"
                       style={{
                         background: isChecked ? 'rgba(59, 130, 246, 0.08)' : undefined,
                         cursor: 'pointer'
                       }}
-                      onClick={() => handleToggleRow(r.cmpProfInvoiceCode)}
+                      onClick={() => handleToggleOwner(p.ownerCode)}
                     >
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => handleToggleRow(r.cmpProfInvoiceCode)}
+                          onChange={() => handleToggleOwner(p.ownerCode)}
                           style={{ cursor: 'pointer', width: '13px', height: '13px' }}
                         />
                       </td>
                       <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
                         {i + 1}
                       </td>
-                      <td style={{ fontWeight: 600 }}>{r.profileName}</td>
-                      <td style={{ color: 'var(--text-muted)' }}>{r.stack || '-'}</td>
-                      <td>{r.projectName || '-'}</td>
-                      <td>{r.invoiceToName || '-'}</td>
+                      <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
-                        {r.invoiceMonth}
+                        {p.month}
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
-                        {fmtUsd(r.chargedAmtUsd)}
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                        {p.rowsCount} rows
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                        {fmtPkr(r.chargedAmtPkr)}
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-cost-color)' }}>
+                        {fmtUsd(p.totalCost)}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '1px 5px',
-                          borderRadius: '3px',
-                          fontSize: '0.65rem',
-                          fontWeight: 700,
-                          background: 'rgba(59, 130, 246, 0.1)',
-                          color: '#2563eb'
-                        }}>
-                          PROCESSED
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{r.insertBy || '-'}</td>
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         <button
                           type="button"
-                          onClick={() => handleSingleUnprocess(r.cmpProfInvoiceCode)}
+                          onClick={() => handleSingleUnprocess(p)}
                           disabled={actionLoading}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.2rem',
-                            padding: '1px 5px',
+                            padding: '1px 7px',
                             height: '20px',
                             fontSize: '0.68rem',
+                            fontWeight: 600,
                             background: 'transparent',
                             color: '#2563eb',
                             border: '1px solid rgba(37, 99, 235, 0.3)',
@@ -445,6 +433,25 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                 })
               )}
             </tbody>
+            {filteredProfiles.length > 0 && (
+              <tfoot>
+                <tr style={{ background: 'var(--bg-surface)', fontWeight: 800, borderTop: '2px solid var(--border-medium)' }}>
+                  <td style={{ textAlign: 'center' }}>—</td>
+                  <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.7rem' }}>Total</td>
+                  <td style={{ color: 'var(--text-main)', fontSize: '0.76rem' }}>
+                    Grand Total ({filteredProfiles.length} Profiles)
+                  </td>
+                  <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.72rem' }}>—</td>
+                  <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                    {totalRowsSum} rows
+                  </td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--excel-cost-color)' }}>
+                    {fmtUsd(totalCostSum)}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>—</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         )}
       </div>

@@ -434,19 +434,21 @@ public class ProfileInvoicesController : ControllerBase
     }
 
     /// <summary>
-    /// Get processed profile invoices for month and optional group owner (matches PB dw_status_processed).
-    /// Accepts month or monthYear query param; defaults to current month if unspecified.
+    /// Get processed profile invoices for month and optional group owner.
+    /// By default (raw=false), returns profile-wise aggregate (owner code, name, month, total cost, total invoice, rows count).
+    /// When raw=true, returns raw individual invoice rows.
     /// Live query directly against database with zero caching.
     /// </summary>
     [HttpGet("processed")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    [ProducesResponseType(typeof(List<ProfileInvoiceProcessedRowDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetProcessed(
         [FromQuery] string? month = null,
         [FromQuery] string? monthYear = null,
         [FromQuery] int? groupOwnerCode = null,
         [FromQuery] int? ownerCode = null,
+        [FromQuery] bool raw = false,
         CancellationToken ct = default)
     {
         Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
@@ -458,8 +460,37 @@ public class ProfileInvoicesController : ControllerBase
             selectedMonth = DateTime.UtcNow.ToString("MMMyy").ToUpperInvariant();
 
         int? effectiveOwner = (ownerCode.HasValue && ownerCode.Value > 0) ? ownerCode : groupOwnerCode;
-        var rows = await _profileInvoicingService.GetProcessedInvoicesAsync(selectedMonth, effectiveOwner, ct);
-        return Ok(rows);
+
+        if (raw)
+        {
+            var rows = await _profileInvoicingService.GetProcessedInvoicesAsync(selectedMonth, effectiveOwner, ct);
+            return Ok(rows);
+        }
+
+        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, ct);
+        return Ok(profiles);
+    }
+
+    /// <summary>
+    /// Get profile-wise aggregate of processed invoices for month.
+    /// </summary>
+    [HttpGet("processed-profiles")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType(typeof(List<ProfileInvoiceProcessedProfileDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProcessedProfiles(
+        [FromQuery] string? month = null,
+        [FromQuery] string? monthYear = null,
+        [FromQuery] int? groupOwnerCode = null,
+        [FromQuery] int? ownerCode = null,
+        CancellationToken ct = default)
+    {
+        string selectedMonth = !string.IsNullOrWhiteSpace(month) ? month : (!string.IsNullOrWhiteSpace(monthYear) ? monthYear : string.Empty);
+        if (string.IsNullOrWhiteSpace(selectedMonth))
+            selectedMonth = DateTime.UtcNow.ToString("MMMyy").ToUpperInvariant();
+
+        int? effectiveOwner = (ownerCode.HasValue && ownerCode.Value > 0) ? ownerCode : groupOwnerCode;
+        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, ct);
+        return Ok(profiles);
     }
 
     /// <summary>
@@ -721,11 +752,27 @@ public class ProfileInvoicesController : ControllerBase
         [FromBody] ProfileInvoiceUnprocessRequest request,
         CancellationToken ct = default)
     {
-        if (request == null || request.Codes == null || request.Codes.Count == 0)
+        var codesToUnprocess = new List<long>();
+        if (request?.Codes != null && request.Codes.Count > 0)
+        {
+            codesToUnprocess.AddRange(request.Codes);
+        }
+
+        if (request?.OwnerCodes != null && request.OwnerCodes.Count > 0 && !string.IsNullOrWhiteSpace(request.Month))
+        {
+            var processedRows = await _profileInvoicingService.GetProcessedInvoicesAsync(request.Month, null, ct);
+            var ownerRowCodes = processedRows
+                .Where(r => request.OwnerCodes.Contains(r.PrfgrpOwnCode) || request.OwnerCodes.Contains(r.PrfownCode))
+                .Select(r => r.CmpProfInvoiceCode);
+            codesToUnprocess.AddRange(ownerRowCodes);
+        }
+
+        codesToUnprocess = codesToUnprocess.Distinct().ToList();
+        if (codesToUnprocess.Count == 0)
             return BadRequest(new { message = "Codes cannot be empty." });
 
         string username = User?.Identity?.Name ?? "System";
-        var result = await _profileInvoicingService.UnprocessInvoicesAsync(request.Codes, username, ct);
+        var result = await _profileInvoicingService.UnprocessInvoicesAsync(codesToUnprocess, username, ct);
         if (!result.Success)
             return BadRequest(new { message = result.Message });
 

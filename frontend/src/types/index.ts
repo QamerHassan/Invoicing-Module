@@ -352,6 +352,18 @@ export interface UserEmailSettingsDto {
   hasSavedPassword: boolean;
 }
 
+export interface ProfileInvoiceProcessedProfileDto {
+  ownerCode: number;
+  ownerName: string;
+  month: string;
+  totalCost: number;
+  totalInvoice: number;
+  totalActual: number;
+  totalOther: number;
+  rowsCount: number;
+  invoiceCodes: number[];
+}
+
 export interface ProfileInvoiceProcessedRowDto {
   cmpProfInvoiceCode: number;
   prfownCode: number;

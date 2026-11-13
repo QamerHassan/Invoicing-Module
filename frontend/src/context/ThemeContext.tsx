@@ -8,19 +8,37 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'dark',
+  theme: 'light',
   toggleTheme: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Always clean up legacy localStorage so it never forces dark mode across tabs/sessions
+  useEffect(() => {
+    try {
+      localStorage.removeItem('theme');
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('theme') as Theme | null;
-    return saved === 'light' ? 'light' : 'dark';
+    try {
+      // Choice is ONLY preserved for the current session (sessionStorage), fresh open/tab is always light
+      const saved = sessionStorage.getItem('theme') as Theme | null;
+      return saved === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
   });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    try {
+      sessionStorage.setItem('theme', theme);
+    } catch {
+      // ignore
+    }
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));

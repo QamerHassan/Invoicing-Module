@@ -1,25 +1,23 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Send,
-  Paperclip,
-  Check,
   AlertTriangle,
   FileSpreadsheet,
   KeyRound,
   X,
-  Save,
   CheckCircle2,
   RefreshCw,
   Download,
   Mail,
   User,
   ArrowRight,
-  Clock
+  Clock,
+  ArrowLeft,
+  Search
 } from 'lucide-react';
 import { api } from '../api/client';
-import { OwnerSearchSelect } from './OwnerSearchSelect';
 import { LoadingIndicator } from './LoadingIndicator';
-import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedRowDto } from '../types';
+import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedRowDto, ProfileInvoiceProcessedProfileDto } from '../types';
 
 interface ProfileInvoiceEmailTabProps {
   groupOwners: ProfileGroupOwnerDto[];
@@ -59,19 +57,28 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   selectedCodes,
   selectedRowsPreview
 }) => {
-  const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode);
   const [month, setMonth] = useState<string>(
     (initialMonth || 'OCT26').replace('-', '').toUpperCase()
   );
-
   const cleanMonth = month.trim().replace('-', '').toUpperCase();
+
+  // Mode: 'list' (default: show processed profiles with Email buttons) OR 'compose' (email compose form)
+  const isSelectedMode = Boolean(selectedCodes && selectedCodes.length > 0);
+  const [viewMode, setViewMode] = useState<'list' | 'compose'>(() => {
+    return isSelectedMode ? 'compose' : 'list';
+  });
+
+  const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode);
 
   // Sync props from parent
   useEffect(() => {
     if (initialOwnerCode !== undefined && initialOwnerCode !== '') {
       setOwnerCode(initialOwnerCode);
+      if (isSelectedMode) {
+        setViewMode('compose');
+      }
     }
-  }, [initialOwnerCode]);
+  }, [initialOwnerCode, isSelectedMode]);
 
   useEffect(() => {
     if (initialMonth) {
@@ -79,12 +86,48 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     }
   }, [initialMonth]);
 
-  // Processed invoices state (STRICTLY for this owner)
+  // ─── LIST VIEW STATE (Processed Profiles List) ──────────────────────
+  const [processedProfiles, setProcessedProfiles] = useState<ProfileInvoiceProcessedProfileDto[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState<boolean>(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [search, setSearch] = useState<string>('');
+
+  const loadProcessedProfiles = useCallback(async () => {
+    if (!cleanMonth) return;
+    setLoadingProfiles(true);
+    setProfilesError(null);
+    try {
+      const data = await api.getProcessedProfiles(undefined, cleanMonth);
+      setProcessedProfiles(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setProfilesError(err?.message || 'Failed to load processed profiles.');
+      setProcessedProfiles([]);
+    } finally {
+      setLoadingProfiles(false);
+    }
+  }, [cleanMonth]);
+
+  useEffect(() => {
+    if (viewMode === 'list') {
+      loadProcessedProfiles();
+    }
+  }, [viewMode, loadProcessedProfiles]);
+
+  const filteredProfiles = useMemo(() => {
+    if (!search.trim()) return processedProfiles;
+    const q = search.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
+    return processedProfiles.filter(p => {
+      const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
+      return words.every(w => text.includes(w));
+    });
+  }, [processedProfiles, search]);
+
+  // ─── COMPOSE VIEW STATE ─────────────────────────────────────────────
   const [processedRows, setProcessedRows] = useState<ProfileInvoiceProcessedRowDto[]>([]);
   const [loadingProcessed, setLoadingProcessed] = useState<boolean>(false);
   const [processedError, setProcessedError] = useState<string | null>(null);
 
-  // Unprocessed warning state for this owner
   const [unprocessedWarning, setUnprocessedWarning] = useState<{
     show: boolean;
     ownerName: string;
@@ -93,55 +136,48 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     dismissed: boolean;
   }>({ show: false, ownerName: '', count: 0, usd: 0, dismissed: false });
 
-  // Download & Send state
   const [downloadingExcel, setDownloadingExcel] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
-  const [emailSent, setEmailSent] = useState<boolean>(false);
 
-  // Email form state
   const [toEmail, setToEmail] = useState<string>('');
   const [replyToEmail, setReplyToEmail] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
 
-  // Multi-sender & credential settings state
   const [senderEmail, setSenderEmail] = useState<string>('');
   const [appPassword, setAppPassword] = useState<string>('');
   const [rememberSettings, setRememberSettings] = useState<boolean>(false);
   const [savedSenderEmail, setSavedSenderEmail] = useState<string | null>(null);
   const [hasSavedPassword, setHasSavedPassword] = useState<boolean>(false);
   const [showChangeForm, setShowChangeForm] = useState<boolean>(false);
-  const [loadingSettings, setLoadingSettings] = useState<boolean>(true);
-  const [removingSettings, setRemovingSettings] = useState<boolean>(false);
 
-  // Notifications & validation
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Resolve active owner name
   const currentOwner = useMemo(() => {
     if (!ownerCode) return null;
     return groupOwners.find(o => o.prfOwnCode === ownerCode) || null;
   }, [groupOwners, ownerCode]);
 
-  const activeOwnerName = currentOwner?.profileName || (processedRows.length > 0 ? processedRows[0].profileName : `Owner #${ownerCode}`);
+  const activeOwnerProfile = useMemo(() => {
+    if (!ownerCode) return null;
+    return processedProfiles.find(p => p.ownerCode === ownerCode) || null;
+  }, [processedProfiles, ownerCode]);
 
-  // Load saved sender settings on mount
+  const activeOwnerName = currentOwner?.profileName || activeOwnerProfile?.ownerName || (processedRows.length > 0 ? processedRows[0].profileName : `Owner #${ownerCode}`);
+
   useEffect(() => {
-    setLoadingSettings(true);
     api.getEmailSettings()
       .then(s => {
         setSavedSenderEmail(s.senderEmail);
         setHasSavedPassword(s.hasSavedPassword);
       })
-      .catch(() => { /* silently ignore */ })
-      .finally(() => setLoadingSettings(false));
+      .catch(() => { /* silently ignore */ });
   }, []);
 
   const hasSavedSettings = !!savedSenderEmail && hasSavedPassword;
 
-  // 1. Fetch Processed Invoices ONLY for the selected owner & month
   const loadOwnerProcessedInvoices = useCallback(async () => {
     if (!ownerCode || !cleanMonth) {
       setProcessedRows([]);
@@ -152,7 +188,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     setProcessedError(null);
 
     try {
-      // Backend-level filtering: passes ownerCode so API returns ONLY this owner's processed rows
       const data = await api.getProcessedInvoices(Number(ownerCode), cleanMonth);
       setProcessedRows(Array.isArray(data) ? data : []);
     } catch (err: any) {
@@ -163,7 +198,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     }
   }, [ownerCode, cleanMonth]);
 
-  // 2. Check Unprocessed Invoices status for this owner & month
   const checkOwnerUnprocessedStatus = useCallback(async () => {
     if (!ownerCode || !cleanMonth) {
       setUnprocessedWarning(prev => ({ ...prev, show: false }));
@@ -184,18 +218,16 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         setUnprocessedWarning(prev => ({ ...prev, show: false, dismissed: false, count: 0, usd: 0 }));
       }
     } catch {
-      // Non-fatal if warning check fails
       setUnprocessedWarning(prev => ({ ...prev, show: false }));
     }
   }, [ownerCode, cleanMonth, activeOwnerName]);
 
-  // Reload data whenever ownerCode or cleanMonth changes
   useEffect(() => {
-    loadOwnerProcessedInvoices();
-    checkOwnerUnprocessedStatus();
-  }, [loadOwnerProcessedInvoices, checkOwnerUnprocessedStatus]);
-
-  const isSelectedMode = Boolean(selectedCodes && selectedCodes.length > 0);
+    if (viewMode === 'compose' && ownerCode) {
+      loadOwnerProcessedInvoices();
+      checkOwnerUnprocessedStatus();
+    }
+  }, [viewMode, ownerCode, loadOwnerProcessedInvoices, checkOwnerUnprocessedStatus]);
 
   const displayRows = useMemo(() => {
     if (selectedRowsPreview && selectedRowsPreview.length > 0) {
@@ -204,44 +236,35 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     return processedRows;
   }, [selectedRowsPreview, processedRows]);
 
-  // Update default email recipient, subject, and body when owner or rows change
+  // Update default email recipient, subject, and body
   useEffect(() => {
-    if (!ownerCode) {
-      setToEmail('');
-      setSubject('');
-      setBody('');
-      return;
-    }
+    if (!ownerCode || viewMode !== 'compose') return;
 
     const cachedEmail = localStorage.getItem(`profile_invoice_email_recipient_${ownerCode}`) || '';
     setToEmail(cachedEmail);
 
     const monthFormatted = formatMonthDisplay(cleanMonth);
-    const totalUsd = displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const invoiceTotal = activeOwnerProfile ? activeOwnerProfile.totalInvoice : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
 
     setSubject(`Profile Invoice – ${activeOwnerName} – ${monthFormatted}`);
     setBody(
       `Dear ${activeOwnerName},\n\n` +
       `Please find attached your ${isSelectedMode ? 'selected' : 'processed'} profile invoice for ${monthFormatted}.\n\n` +
       `Summary:\n` +
-      `• ${isSelectedMode ? 'Selected' : 'Processed'} Invoices: ${displayRows.length}\n` +
-      `• Total Amount: $${Math.round(totalUsd).toLocaleString()}\n\n` +
+      `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
+      `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n` +
       `Please review the attached Excel workbook for complete line-item breakdown.\n\n` +
       `Regards,\n` +
       `Rizviz Invoicing Team`
     );
     setFieldErrors({});
-    setSuccessMsg(null);
-    setErrorMsg(null);
-    setEmailSent(false);
-  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode]);
+  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile]);
 
-  // Calculated totals for this owner's display rows
   const ownerTotals = useMemo(() => {
-    const usd = displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
-    const pkr = displayRows.reduce((acc, r: any) => acc + (r.chargedAmtPkr ?? 0), 0);
-    return { count: displayRows.length, usd, pkr };
-  }, [displayRows]);
+    const usd = activeOwnerProfile ? activeOwnerProfile.totalInvoice : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const count = activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length;
+    return { count, usd };
+  }, [activeOwnerProfile, displayRows]);
 
   const attachmentFilename = ownerCode && cleanMonth
     ? (isSelectedMode
@@ -249,7 +272,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         : `Processed_Invoice_${formatCleanFilename(activeOwnerName)}_${cleanMonth}.xlsx`)
     : null;
 
-  // Review / Download Excel attachment preview
   const handleReviewAttachment = async () => {
     if (!ownerCode || !cleanMonth) return;
     try {
@@ -299,22 +321,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleRemoveSettings = async () => {
-    setRemovingSettings(true);
-    try {
-      await api.deleteEmailSettings();
-      setSavedSenderEmail(null);
-      setHasSavedPassword(false);
-      setShowChangeForm(false);
-      setSenderEmail('');
-      setAppPassword('');
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to remove settings.');
-    } finally {
-      setRemovingSettings(false);
-    }
-  };
-
   const handleSend = async () => {
     setSuccessMsg(null);
     setErrorMsg(null);
@@ -334,8 +340,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
 
     try {
       setSending(true);
-
-      // Cache recipient email for this owner
       localStorage.setItem(`profile_invoice_email_recipient_${ownerCode}`, toEmail.trim());
 
       const result = await api.sendProfileInvoiceEmail({
@@ -354,8 +358,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       });
 
       if (result.success) {
-        setSuccessMsg((result.message || `Invoice email sent successfully to ${toEmail.trim()}!`) + ' Invoices processed tab mein move ho chuki hain.');
-        setEmailSent(true);
+        setSuccessMsg(result.message || `Invoice email sent successfully to ${toEmail.trim()}!`);
         setFieldErrors({});
 
         if (activeRemember && activeSenderEmail) {
@@ -364,15 +367,25 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           setShowChangeForm(false);
           setSenderEmail('');
         }
+
+        // Return to processed profiles list after successful send
+        setTimeout(() => {
+          setViewMode('list');
+          setOwnerCode('');
+          loadProcessedProfiles();
+        }, 1500);
       } else {
         setErrorMsg(result.message || 'Failed to send email.');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'An unexpected error occurred while sending email.');
+      setErrorMsg(err?.message || 'Network error while sending email.');
     } finally {
       setSending(false);
     }
   };
+
+  const fmtUsd = (v: number) =>
+    v == null ? '$0' : '$' + Math.round(v).toLocaleString();
 
   const inputStyle = (hasError: boolean): React.CSSProperties => ({
     width: '100%',
@@ -386,26 +399,254 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     boxSizing: 'border-box'
   });
 
+  // ═════════════════════════════════════════════════════════════════════
+  // ─── VIEW 1: PROCESSED PROFILES LIST VIEW (Default / Tab Open) ───────
+  // ═════════════════════════════════════════════════════════════════════
+  if (viewMode === 'list') {
+    return (
+      <div style={{ flex: 1, minHeight: 0, padding: '2px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {/* Toolbar */}
+        <div className="compact-toolbar" style={{ minHeight: '30px', padding: '2px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Mail size={14} style={{ color: 'var(--accent-primary)' }} />
+              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Email Processed Invoices
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Month:
+              </span>
+              <input
+                type="text"
+                value={month}
+                onChange={e => {
+                  const val = e.target.value.toUpperCase();
+                  setMonth(val);
+                  if (onMonthChange) onMonthChange(val);
+                }}
+                placeholder="OCT26"
+                maxLength={7}
+                style={{
+                  padding: '1px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.75rem',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 700,
+                  width: '68px',
+                  height: '24px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <button
+                onClick={loadProcessedProfiles}
+                disabled={loadingProfiles}
+                title="Refresh processed profiles"
+                style={{
+                  height: '24px',
+                  padding: '0 6px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: loadingProfiles ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)'
+                }}
+              >
+                <RefreshCw size={11} className={loadingProfiles ? 'spin' : ''} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {/* Search */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={11} style={{ position: 'absolute', left: '6px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search profiles..."
+                style={{
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '1px 22px 1px 20px',
+                  fontSize: '0.72rem',
+                  width: '140px',
+                  height: '24px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  style={{
+                    position: 'absolute',
+                    right: '4px',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              {filteredProfiles.length} processed profile{filteredProfiles.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Notifications */}
+        {successMsg && (
+          <div style={{
+            padding: '0.3rem 0.6rem',
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: 'var(--radius-sm)',
+            color: '#10b981',
+            fontSize: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}>
+            <CheckCircle2 size={13} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+        {profilesError && (
+          <div style={{
+            padding: '0.3rem 0.6rem',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 'var(--radius-sm)',
+            color: '#ef4444',
+            fontSize: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}>
+            <AlertTriangle size={13} />
+            <span>{profilesError}</span>
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="compact-table-container">
+          {loadingProfiles ? (
+            <LoadingIndicator message="Loading processed profiles for email..." fullHeight />
+          ) : (
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'center', width: '40px' }}>#</th>
+                  <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Name</th>
+                  <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
+                  <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
+                  <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
+                  <th style={{ minWidth: '90px', textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProfiles.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      <Mail size={24} style={{ color: 'var(--text-subtle)', margin: '0 auto 8px', display: 'block' }} />
+                      {search ? `No processed profiles matching "${search}".` : 'Koi processed invoice nahi.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProfiles.map((p, i) => (
+                    <tr
+                      key={p.ownerCode}
+                      className="table-row-hover"
+                    >
+                      <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                        {i + 1}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                        {p.month}
+                      </td>
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                        {p.rowsCount} rows
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
+                        {fmtUsd(p.totalInvoice)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOwnerCode(p.ownerCode);
+                            if (onOwnerChange) onOwnerChange(p.ownerCode);
+                            setViewMode('compose');
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            padding: '2px 10px',
+                            height: '22px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            background: '#2563eb',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 'var(--radius-sm)',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                          }}
+                          title={`Compose invoice email for ${p.ownerName}`}
+                        >
+                          <Mail size={11} />
+                          <span>Email</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // ─── VIEW 2: COMPOSE VIEW FOR SELECTED PROFILE ───────────────────────
+  // ═════════════════════════════════════════════════════════════════════
   return (
     <div style={{ flex: 1, minHeight: 0, padding: '2px', display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
       
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* ─── UNPROCESSED INVOICE WARNING POPUP MODAL ─────────────────────── */}
-      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* ─── UNPROCESSED INVOICE WARNING POPUP MODAL ─── */}
       {unprocessedWarning.show && !unprocessedWarning.dismissed && (
         <div style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0, 0, 0, 0.65)',
           backdropFilter: 'blur(3px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-          padding: '1rem'
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 100, padding: '1rem'
         }}>
           <div style={{
             background: 'var(--bg-surface, #1e293b)',
@@ -413,29 +654,19 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             borderRadius: 'var(--radius-md, 8px)',
             maxWidth: '520px',
             width: '100%',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3)',
-            overflow: 'hidden',
-            animation: 'fadeIn 0.2s ease-out'
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+            overflow: 'hidden'
           }}>
-            {/* Modal Header */}
             <div style={{
               background: 'rgba(245, 158, 11, 0.15)',
               borderBottom: '1px solid rgba(245, 158, 11, 0.35)',
               padding: '12px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
+              display: 'flex', alignItems: 'center', gap: '10px'
             }}>
               <div style={{
-                background: '#f59e0b',
-                color: '#000',
-                borderRadius: '50%',
-                width: '28px',
-                height: '28px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
+                background: '#f59e0b', color: '#000', borderRadius: '50%',
+                width: '28px', height: '28px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
               }}>
                 <AlertTriangle size={17} />
               </div>
@@ -449,7 +680,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               </div>
             </div>
 
-            {/* Modal Body */}
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <p style={{ margin: 0, fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main, #f8fafc)' }}>
                 Some invoices for <span style={{ color: '#f59e0b' }}>{unprocessedWarning.ownerName}</span> are still unprocessed.
@@ -458,42 +688,34 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               <div style={{
                 background: 'var(--bg-secondary, #0f172a)',
                 border: '1px solid var(--border-subtle, #334155)',
-                borderRadius: 'var(--radius-sm, 6px)',
+                borderRadius: 'var(--radius-sm, 4px)',
                 padding: '10px 14px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px'
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Profile Owner:</span>
-                  <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{unprocessedWarning.ownerName}</span>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>Unprocessed Count</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                    {unprocessedWarning.count} invoices
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Invoice Month:</span>
-                  <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{formatMonthDisplay(cleanMonth)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Pending Unprocessed:</span>
-                  <span style={{ fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
-                    {unprocessedWarning.count} invoice(s) ({unprocessedWarning.usd > 0 ? `$${Math.round(unprocessedWarning.usd).toLocaleString()}` : 'pending'})
-                  </span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>Pending Amount</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                    ${Math.round(unprocessedWarning.usd).toLocaleString()}
+                  </div>
                 </div>
               </div>
 
-              <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                Email View and Excel attachments include <strong>only processed invoices</strong>. To include these pending invoices in this owner's email, please process them in Excel Sheet View / Unprocessed.
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', lineHeight: 1.4 }}>
+                The email attachment will strictly contain currently processed invoices only.
               </p>
             </div>
 
-            {/* Modal Actions */}
             <div style={{
-              padding: '12px 16px',
               background: 'var(--bg-secondary, #0f172a)',
               borderTop: '1px solid var(--border-subtle, #334155)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: '8px'
+              padding: '10px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px'
             }}>
               <button
                 onClick={() => setUnprocessedWarning(prev => ({ ...prev, dismissed: true }))}
@@ -528,9 +750,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                   fontSize: '0.78rem',
                   fontWeight: 800,
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
+                  display: 'flex', alignItems: 'center', gap: '6px'
                 }}
               >
                 <span>Go to Unprocessed Invoices</span>
@@ -541,95 +761,42 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         </div>
       )}
 
-      {/* ─── Compact Top Filter Toolbar ─── */}
-      <div className="compact-toolbar" style={{ minHeight: '30px', padding: '2px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+      {/* ─── Top Navigation Bar with Back Button ─── */}
+      <div className="compact-toolbar" style={{ minHeight: '32px', padding: '2px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.70rem', fontWeight: 800, color: 'var(--accent-primary, #6366f1)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Mail size={13} />
-              <span>Email:</span>
-            </span>
-            <div style={{ width: '220px' }}>
-              <OwnerSearchSelect
-                owners={groupOwners}
-                value={ownerCode}
-                onChange={val => {
-                  setOwnerCode(val);
-                  if (onOwnerChange) onOwnerChange(val);
-                  setFieldErrors(prev => ({ ...prev, owner: '' }));
-                  setSuccessMsg(null);
-                }}
-                allowAll={false}
-                placeholder="Select Owner..."
-                compact={true}
-              />
-            </div>
-          </div>
+          <button
+            onClick={() => {
+              setViewMode('list');
+              setSuccessMsg(null);
+              setErrorMsg(null);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              padding: '2px 8px',
+              height: '24px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-main)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer'
+            }}
+            title="Wapas Processed Profiles List Par"
+          >
+            <ArrowLeft size={12} />
+            <span>Processed List</span>
+          </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-              Month:
-            </span>
-            <input
-              type="text"
-              value={month}
-              onChange={e => {
-                const val = e.target.value.toUpperCase();
-                setMonth(val);
-                if (onMonthChange) onMonthChange(val);
-                setFieldErrors(prev => ({ ...prev, month: '' }));
-                setSuccessMsg(null);
-              }}
-              placeholder="OCT26"
-              maxLength={7}
-              style={{
-                padding: '1px 6px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-subtle)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-main)',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 700,
-                width: '68px',
-                height: '24px',
-                boxSizing: 'border-box'
-              }}
-            />
-            <button
-              onClick={() => {
-                loadOwnerProcessedInvoices();
-                checkOwnerUnprocessedStatus();
-              }}
-              disabled={loadingProcessed}
-              title="Refresh processed invoices for this owner"
-              style={{
-                height: '24px',
-                padding: '0 6px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: loadingProcessed ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px',
-                fontSize: '0.7rem',
-                color: 'var(--text-muted)'
-              }}
-            >
-              <RefreshCw size={11} className={loadingProcessed ? 'spin' : ''} />
-              <span>Refresh</span>
-            </button>
-          </div>
-
-          {/* Owner Processed summary pill */}
+          {/* Profile Name & Stats Pill */}
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
-            fontSize: '0.72rem',
-            padding: '2px 8px',
+            fontSize: '0.74rem',
+            padding: '2px 10px',
             borderRadius: '12px',
             background: 'rgba(99, 102, 241, 0.08)',
             border: '1px solid rgba(99, 102, 241, 0.25)',
@@ -637,12 +804,13 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           }}>
             <span>Owner: <strong>{activeOwnerName}</strong></span>
             <span style={{ color: 'var(--text-subtle)' }}>•</span>
+            <span>Month: <strong>{cleanMonth}</strong></span>
+            <span style={{ color: 'var(--text-subtle)' }}>•</span>
             <span>Processed: <strong>{ownerTotals.count}</strong> invoices</span>
             <span style={{ color: 'var(--text-subtle)' }}>•</span>
-            <span style={{ color: '#10b981', fontWeight: 800 }}>${Math.round(ownerTotals.usd).toLocaleString()}</span>
+            <span style={{ color: 'var(--excel-actual-color)', fontWeight: 800 }}>${Math.round(ownerTotals.usd).toLocaleString()}</span>
           </div>
 
-          {/* Pending Unprocessed indicator badge if any */}
           {unprocessedWarning.count > 0 && (
             <button
               onClick={() => {
@@ -664,10 +832,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               title="Click to navigate and process pending invoices"
             >
               <Clock size={11} />
-              <span>{unprocessedWarning.count} Unprocessed Pending (Click to Process)</span>
+              <span>{unprocessedWarning.count} Unprocessed Pending</span>
             </button>
           )}
-
         </div>
 
         {/* Send Action Button */}
@@ -684,7 +851,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.35rem',
-              background: 'var(--accent-primary)',
+              background: '#2563eb',
               opacity: (sending || !ownerCode || !cleanMonth || displayRows.length === 0) ? 0.6 : 1,
               cursor: (sending || !ownerCode || !cleanMonth || displayRows.length === 0) ? 'not-allowed' : 'pointer'
             }}
@@ -695,7 +862,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         </div>
       </div>
 
-      {/* ─── Compact Notifications ─── */}
+      {/* Notifications */}
       {processedError && (
         <div style={{
           padding: '0.3rem 0.6rem',
@@ -704,9 +871,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           borderRadius: 'var(--radius-sm)',
           color: '#ef4444',
           fontSize: '0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem'
+          display: 'flex', alignItems: 'center', gap: '0.4rem'
         }}>
           <AlertTriangle size={13} />
           <span>{processedError}</span>
@@ -721,9 +886,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           borderRadius: 'var(--radius-sm)',
           color: '#ef4444',
           fontSize: '0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem'
+          display: 'flex', alignItems: 'center', gap: '0.4rem'
         }}>
           <AlertTriangle size={13} />
           <span>{errorMsg}</span>
@@ -738,16 +901,14 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           borderRadius: 'var(--radius-sm)',
           color: '#10b981',
           fontSize: '0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem'
+          display: 'flex', alignItems: 'center', gap: '0.4rem'
         }}>
           <CheckCircle2 size={13} />
           <span>{successMsg}</span>
         </div>
       )}
 
-      {/* ─── Main 2-Panel Content Layout (Strictly for Selected Owner) ─── */}
+      {/* ─── Main 2-Panel Content Layout ─── */}
       <div style={{
         flex: 1,
         minHeight: 0,
@@ -793,7 +954,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               <button
                 onClick={handleReviewAttachment}
                 disabled={downloadingExcel}
-                title={isSelectedMode ? "Download Excel containing selected invoices" : "Download Excel containing only this owner's processed invoices"}
+                title="Download Excel containing this owner's processed invoices"
                 style={{
                   background: 'rgba(16, 185, 129, 0.1)',
                   border: '1px solid rgba(16, 185, 129, 0.3)',
@@ -829,13 +990,13 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <FileSpreadsheet size={24} color="#f59e0b" style={{ margin: '0 auto 8px' }} />
                 <h5 style={{ margin: '0 0 4px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                  {isSelectedMode ? `No Selected Invoices for ${activeOwnerName}` : `No Processed Invoices for ${activeOwnerName}`}
+                  No Processed Invoices for {activeOwnerName}
                 </h5>
                 <p style={{ margin: '0 0 12px', fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                   {unprocessedWarning.count > 0 ? (
                     <span>This owner currently has <strong>{unprocessedWarning.count} unprocessed invoice(s)</strong> waiting to be saved.</span>
                   ) : (
-                    <span>{isSelectedMode ? 'No invoices selected from Excel View.' : `No processed invoices found for ${formatMonthDisplay(cleanMonth)}.`}</span>
+                    <span>No processed invoices found for {formatMonthDisplay(cleanMonth)}.</span>
                   )}
                 </p>
                 {unprocessedWarning.count > 0 && onNavigateToUnprocessed && (
@@ -849,62 +1010,35 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                       background: '#f59e0b',
                       color: '#000',
                       border: 'none',
-                      borderRadius: 'var(--radius-sm)',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
+                      borderRadius: 'var(--radius-sm)'
                     }}
                   >
-                    <span>Process Pending Rows</span>
-                    <ArrowRight size={12} />
+                    Go to Unprocessed
                   </button>
                 )}
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
+              <table className="compact-table" style={{ width: '100%' }}>
                 <thead>
-                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)', position: 'sticky', top: 0, zIndex: 1 }}>
-                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-muted)', width: '55px' }}>Code</th>
-                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-muted)' }}>Project</th>
-                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-muted)', width: '85px' }}>Stack</th>
-                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-muted)' }}>Invoice To</th>
-                    <th style={{ textAlign: 'right', padding: '4px 6px', color: 'var(--text-muted)', width: '75px' }}>USD</th>
-                    <th style={{ textAlign: 'center', padding: '4px 6px', color: 'var(--text-muted)', width: '65px' }}>Status</th>
+                  <tr>
+                    <th style={{ width: '30px', textAlign: 'center' }}>#</th>
+                    <th style={{ minWidth: '90px', textAlign: 'left' }}>Project</th>
+                    <th style={{ minWidth: '80px', textAlign: 'left' }}>Stack</th>
+                    <th style={{ minWidth: '80px', textAlign: 'left' }}>Invoice To</th>
+                    <th style={{ minWidth: '70px', textAlign: 'right' }}>Charged USD</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayRows.map((r: any) => (
-                    <tr key={r.cmpProfInvoiceCode} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                      <td style={{ padding: '4px 6px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>
-                        #{r.cmpProfInvoiceCode}
+                  {displayRows.map((r: any, idx: number) => (
+                    <tr key={r.cmpProfInvoiceCode || idx}>
+                      <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                        {idx + 1}
                       </td>
-                      <td style={{ padding: '4px 6px', fontWeight: 600, color: 'var(--text-main)' }}>
-                        {r.projectName || '—'}
-                      </td>
-                      <td style={{ padding: '4px 6px', color: 'var(--text-muted)' }}>
-                        {r.stack || '—'}
-                      </td>
-                      <td style={{ padding: '4px 6px', color: 'var(--text-muted)' }}>
-                        {r.invoiceToName || r.profileName || '—'}
-                      </td>
-                      <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#10b981' }}>
-                        ${Math.round(r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0).toLocaleString()}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '4px 6px' }}>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                          fontSize: '0.62rem',
-                          fontWeight: 700,
-                          color: '#10b981',
-                          background: 'rgba(16, 185, 129, 0.12)',
-                          padding: '1px 5px',
-                          borderRadius: '3px'
-                        }}>
-                          <Check size={9} /> {r.isProcessed ? 'Processed' : 'Selected'}
-                        </span>
+                      <td style={{ fontWeight: 600 }}>{r.projectName || '-'}</td>
+                      <td style={{ color: 'var(--text-muted)' }}>{r.stack || '-'}</td>
+                      <td>{r.invoiceToName || '-'}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
+                        {fmtUsd(r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost)}
                       </td>
                     </tr>
                   ))}
@@ -913,97 +1047,78 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             )}
           </div>
 
-          {/* Table Footer with Totals */}
-          {displayRows.length > 0 && (
-            <div style={{
-              padding: '4px 8px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '0.72rem'
-            }}>
-              <span style={{ color: 'var(--text-muted)' }}>
-                {isSelectedMode ? 'Total Selected Records:' : 'Total Processed Records:'} <strong>{ownerTotals.count}</strong>
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Total Amount:</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                  ${Math.round(ownerTotals.usd).toLocaleString()} USD
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ═════════ RIGHT PANE: Email Composer & Attachment Review ═════════ */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-sm)',
-          background: 'var(--bg-secondary)',
-          padding: '8px',
-          overflowY: 'auto'
-        }}>
-
-          {/* Recipient Attachment Banner with Direct Review Button */}
+          {/* Attachment Banner */}
           <div style={{
-            background: 'rgba(99, 102, 241, 0.08)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
+            background: 'rgba(99, 102, 241, 0.05)',
+            border: '1px solid rgba(99, 102, 241, 0.2)',
             borderRadius: 'var(--radius-sm)',
-            padding: '6px 8px',
+            padding: '6px 10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '0.5rem',
-            flexWrap: 'wrap'
+            gap: '8px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-              <Paperclip size={13} color="#818cf8" />
-              <FileSpreadsheet size={13} color="#10b981" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <div style={{
+                background: '#10b981',
+                color: '#fff',
+                borderRadius: '4px',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <FileSpreadsheet size={16} />
+              </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {attachmentFilename || 'Select an owner and month'}
+                <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {attachmentFilename || 'invoice.xlsx'}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-subtle)' }}>
-                  {displayRows.length > 0
-                    ? `Contains only ${displayRows.length} ${isSelectedMode ? 'selected' : 'processed'} records for ${activeOwnerName}`
-                    : 'Excel attachment'}
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  Excel Invoice Attachment (Generated from live data)
                 </div>
               </div>
             </div>
 
-            {ownerCode && (
-              <button
-                onClick={handleReviewAttachment}
-                disabled={downloadingExcel || displayRows.length === 0}
-                className="btn-secondary"
-                style={{
-                  height: '24px',
-                  padding: '0 8px',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  cursor: (downloadingExcel || processedRows.length === 0) ? 'not-allowed' : 'pointer',
-                  opacity: (downloadingExcel || processedRows.length === 0) ? 0.6 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  background: 'var(--bg-surface)'
-                }}
-              >
-                <Download size={11} className={downloadingExcel ? 'spin' : ''} />
-                <span>{downloadingExcel ? 'Generating...' : 'Review / Download Attachment'}</span>
-              </button>
-            )}
+            <button
+              onClick={handleReviewAttachment}
+              disabled={downloadingExcel || !ownerCode || displayRows.length === 0}
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-main)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '3px 8px',
+                fontSize: '0.70rem',
+                fontWeight: 700,
+                cursor: (downloadingExcel || !ownerCode || displayRows.length === 0) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: 0
+              }}
+            >
+              <Download size={11} className={downloadingExcel ? 'spin' : ''} />
+              <span>{downloadingExcel ? 'Downloading...' : 'Review File'}</span>
+            </button>
           </div>
+        </div>
 
-          {/* Recipient To Email */}
+        {/* ═════════ RIGHT PANE: Email Compose Form ═════════ */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--bg-secondary)',
+          padding: '8px 12px',
+          overflowY: 'auto'
+        }}>
+          {/* Recipient */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 700, textTransform: 'uppercase' }}>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
               To (Recipient Email) <span style={{ color: '#ef4444' }}>*</span>
             </label>
             <input
@@ -1012,20 +1127,19 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               onChange={e => {
                 setToEmail(e.target.value);
                 setFieldErrors(prev => ({ ...prev, toEmail: '' }));
-                setSuccessMsg(null);
               }}
-              placeholder="recipient@example.com"
+              placeholder={`e.g. ${formatCleanFilename(activeOwnerName).toLowerCase()}@client.com`}
               style={inputStyle(!!fieldErrors.toEmail)}
             />
             {fieldErrors.toEmail && (
-              <span style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.15rem', display: 'block' }}>{fieldErrors.toEmail}</span>
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.toEmail}</span>
             )}
           </div>
 
-          {/* Reply-To Email */}
+          {/* Reply-To */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 700, textTransform: 'uppercase' }}>
-              Reply-To <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-subtle)' }}>(Optional)</span>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+              Reply-To (Optional)
             </label>
             <input
               type="email"
@@ -1033,19 +1147,18 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               onChange={e => {
                 setReplyToEmail(e.target.value);
                 setFieldErrors(prev => ({ ...prev, replyToEmail: '' }));
-                setSuccessMsg(null);
               }}
-              placeholder="billing@example.com (replies come here)"
+              placeholder="e.g. accounts@rizviz.com"
               style={inputStyle(!!fieldErrors.replyToEmail)}
             />
             {fieldErrors.replyToEmail && (
-              <span style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.15rem', display: 'block' }}>{fieldErrors.replyToEmail}</span>
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.replyToEmail}</span>
             )}
           </div>
 
           {/* Subject */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 700, textTransform: 'uppercase' }}>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
               Subject <span style={{ color: '#ef4444' }}>*</span>
             </label>
             <input
@@ -1054,264 +1167,126 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               onChange={e => {
                 setSubject(e.target.value);
                 setFieldErrors(prev => ({ ...prev, subject: '' }));
-                setSuccessMsg(null);
               }}
-              placeholder={`Profile Invoice – ${activeOwnerName} – ${formatMonthDisplay(cleanMonth)}`}
+              placeholder="Invoice Subject..."
               style={inputStyle(!!fieldErrors.subject)}
             />
             {fieldErrors.subject && (
-              <span style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.15rem', display: 'block' }}>{fieldErrors.subject}</span>
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.subject}</span>
             )}
           </div>
 
-          {/* Sender Settings Panel */}
-          <div style={{
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--bg-surface)',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '4px 8px',
-              background: 'rgba(99,102,241,0.06)',
-              borderBottom: '1px solid var(--border-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}>
-              <KeyRound size={12} color="#818cf8" />
-              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Sender Settings
-              </span>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-subtle)' }}>
-                (Optional – leave blank for system default)
-              </span>
-            </div>
-
-            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {!loadingSettings && hasSavedSettings && !showChangeForm ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    background: 'rgba(16,185,129,0.1)',
-                    border: '1px solid rgba(16,185,129,0.3)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '3px 7px',
-                    flex: 1,
-                    minWidth: 0
-                  }}>
-                    <Check size={12} color="#10b981" />
-                    <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Saved:</span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {savedSenderEmail}
-                    </span>
-                    <span style={{
-                      fontSize: '0.65rem',
-                      background: 'rgba(16,185,129,0.2)',
-                      color: '#10b981',
-                      padding: '0.05rem 0.35rem',
-                      borderRadius: '3px',
-                      fontWeight: 600
-                    }}>
-                      Password Saved
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => { setShowChangeForm(true); setSenderEmail(savedSenderEmail ?? ''); }}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '2px 7px',
-                      fontSize: '0.7rem',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Change
-                  </button>
-                  <button
-                    onClick={handleRemoveSettings}
-                    disabled={removingSettings}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid rgba(239,68,68,0.4)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '2px 7px',
-                      fontSize: '0.7rem',
-                      color: '#ef4444',
-                      cursor: removingSettings ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.2rem'
-                    }}
-                  >
-                    <X size={11} />
-                    {removingSettings ? '...' : 'Remove'}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {showChangeForm && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => { setShowChangeForm(false); setSenderEmail(''); setAppPassword(''); }}
-                        style={{ background: 'transparent', border: 'none', fontSize: '0.7rem', color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
-                      >
-                        <X size={11} /> Cancel change
-                      </button>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>
-                        Sender Email
-                      </label>
-                      <input
-                        type="email"
-                        value={senderEmail}
-                        autoComplete="off"
-                        onChange={e => {
-                          setSenderEmail(e.target.value);
-                          setFieldErrors(prev => ({ ...prev, senderEmail: '' }));
-                          setSuccessMsg(null);
-                        }}
-                        placeholder="youremail@gmail.com"
-                        style={inputStyle(!!fieldErrors.senderEmail)}
-                      />
-                      {fieldErrors.senderEmail && (
-                        <span style={{ fontSize: '0.68rem', color: '#ef4444', marginTop: '0.1rem', display: 'block' }}>{fieldErrors.senderEmail}</span>
-                      )}
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>
-                        App Password
-                      </label>
-                      <input
-                        type="password"
-                        value={appPassword}
-                        autoComplete="new-password"
-                        onChange={e => {
-                          setAppPassword(e.target.value);
-                          setFieldErrors(prev => ({ ...prev, appPassword: '' }));
-                          setSuccessMsg(null);
-                        }}
-                        placeholder="Gmail app password"
-                        style={inputStyle(!!fieldErrors.appPassword)}
-                      />
-                      {fieldErrors.appPassword && (
-                        <span style={{ fontSize: '0.68rem', color: '#ef4444', marginTop: '0.1rem', display: 'block' }}>{fieldErrors.appPassword}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {(senderEmail.trim() || showChangeForm) && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      <input
-                        type="checkbox"
-                        checked={rememberSettings}
-                        onChange={e => setRememberSettings(e.target.checked)}
-                        style={{ width: '13px', height: '13px', cursor: 'pointer' }}
-                      />
-                      <Save size={11} color="#818cf8" />
-                      Remember settings (saved on successful send)
-                    </label>
-                  )}
-
-                  <p style={{ margin: 0, fontSize: '0.67rem', color: 'var(--text-subtle)', lineHeight: 1.35 }}>
-                    For Gmail: Use an <strong>App Password</strong> from Google Account → Security → 2-Step Verification.
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Message Body */}
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '160px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-              <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                Message Body <span style={{ color: '#ef4444' }}>*</span>
-              </label>
-              <span style={{ fontSize: '0.67rem', color: 'var(--text-subtle)' }}>
-                Excel attachment is automatically attached
-              </span>
-            </div>
-
+          {/* Body */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+              Message Body <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <textarea
               value={body}
               onChange={e => {
                 setBody(e.target.value);
                 setFieldErrors(prev => ({ ...prev, body: '' }));
-                setSuccessMsg(null);
               }}
-              placeholder="Dear Sir/Madam..."
+              rows={8}
               style={{
                 ...inputStyle(!!fieldErrors.body),
                 flex: 1,
-                minHeight: '150px',
+                minHeight: '130px',
                 resize: 'vertical',
-                lineHeight: 1.5,
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                lineHeight: 1.45
               }}
             />
             {fieldErrors.body && (
-              <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'block' }}>{fieldErrors.body}</span>
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.body}</span>
             )}
           </div>
 
-          {/* Bottom Actions Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                Sending for: <strong>{activeOwnerName}</strong>
-              </span>
-              {emailSent && (
-                <span style={{
-                  fontSize: '0.68rem',
-                  color: '#10b981',
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  padding: '1px 6px',
-                  borderRadius: '3px',
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}>
-                  <Check size={10} /> Sent
+          {/* Sender Credentials Settings Accordion / Box */}
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '6px 10px',
+            fontSize: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <KeyRound size={12} color="var(--accent-primary)" />
+                <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  Sender Settings:
                 </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                  {hasSavedSettings && !showChangeForm
+                    ? `Using ${savedSenderEmail}`
+                    : 'System Default SMTP'}
+                </span>
+              </div>
+
+              {hasSavedSettings && (
+                <button
+                  type="button"
+                  onClick={() => setShowChangeForm(!showChangeForm)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-primary)',
+                    fontSize: '0.70rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  {showChangeForm ? 'Cancel' : 'Change Credentials'}
+                </button>
               )}
             </div>
 
-            <button
-              onClick={handleSend}
-              disabled={sending || !ownerCode || !cleanMonth || processedRows.length === 0}
-              className="btn-primary"
-              style={{
-                height: '28px',
-                padding: '2px 16px',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: 'var(--accent-primary)',
-                opacity: (sending || !ownerCode || !cleanMonth || processedRows.length === 0) ? 0.6 : 1,
-                cursor: (sending || !ownerCode || !cleanMonth || processedRows.length === 0) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              <Send size={12} className={sending ? 'spin' : ''} />
-              <span>{sending ? 'Sending...' : 'Send Invoice Email'}</span>
-            </button>
+            {(!hasSavedSettings || showChangeForm) && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div>
+                  <input
+                    type="email"
+                    value={senderEmail}
+                    onChange={e => setSenderEmail(e.target.value)}
+                    placeholder="Custom Gmail / SMTP Sender Email"
+                    style={inputStyle(!!fieldErrors.senderEmail)}
+                  />
+                  {fieldErrors.senderEmail && (
+                    <span style={{ fontSize: '0.65rem', color: '#ef4444' }}>{fieldErrors.senderEmail}</span>
+                  )}
+                </div>
+
+                <div>
+                  <input
+                    type="password"
+                    value={appPassword}
+                    onChange={e => setAppPassword(e.target.value)}
+                    placeholder="16-character Google App Password"
+                    style={inputStyle(!!fieldErrors.appPassword)}
+                  />
+                  {fieldErrors.appPassword && (
+                    <span style={{ fontSize: '0.65rem', color: '#ef4444' }}>{fieldErrors.appPassword}</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="checkbox"
+                    id="rememberSettings"
+                    checked={rememberSettings}
+                    onChange={e => setRememberSettings(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <label htmlFor="rememberSettings" style={{ fontSize: '0.70rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                    Remember credentials for future sessions
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
-
         </div>
-
       </div>
-
     </div>
   );
 };
