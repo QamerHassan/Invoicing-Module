@@ -1945,7 +1945,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmd.CommandText = $@"
                 SELECT pi.cmp_prof_invoice_code, pi.prfown_code, pi.project_code, pi.interview_code, pi.charg_type_code,
                        pi.charged_amt_usd, pi.total_usd_cost, pi.resource_type, pi.invoice_to,
-                       CASE WHEN RTRIM(ISNULL(pi.resource_type, '')) IN ('JH', 'SP') THEN ISNULL(pi.is_included, 0) ELSE ISNULL(pi.is_included, 1) END AS is_included,
+                       CASE WHEN RTRIM(ISNULL(pi.resource_type, '')) IN ('JH', 'SP', 'DR') THEN ISNULL(pi.is_included, 0) ELSE ISNULL(pi.is_included, 1) END AS is_included,
                        CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 1 ELSE 0 END AS is_executive,
                        pi.charged_amt_pkr, pi.exchange_rate, pi.share_amount,
                        ISNULL(pi.to_be_discussed, 0) AS to_be_discussed,
@@ -2553,8 +2553,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
                 bool isDefaultUncheckedHead = string.Equals(resType, "JH", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(resType, "SP", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(resType, "DR", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(serviceHead, "Job Holder", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(serviceHead, "Support Provider", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(serviceHead, "Second Resource", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(serviceHead, "Support", StringComparison.OrdinalIgnoreCase);
 
                 bool rowInc = dRow.IsIncluded;

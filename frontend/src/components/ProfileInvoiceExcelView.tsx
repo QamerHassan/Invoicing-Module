@@ -99,14 +99,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   // Runtime Auto-Save state
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Identifies heads that must start UNCHECKED by default (Job Holder, Support, Rizviz Share)
+  // Identifies heads that must start UNCHECKED by default (Job Holder, Support, Rizviz Share, Second Resource)
   const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
     if (!serviceHead) return false;
     const s = serviceHead.trim().toLowerCase();
-    return s.includes('job holder') || s.includes('support') || s.includes('rizviz share');
+    return s.includes('job holder') || s.includes('support') || s.includes('rizviz share') || s.includes('second resource');
   };
 
-  // Normalizes Excel view data: Job Holder, Support Provider, and Rizviz Share start unchecked by default
+  // Normalizes Excel view data: Job Holder, Support Provider, Rizviz Share, and Second Resource start unchecked by default
   const normalizeExcelViewData = (d: ProfileInvoiceExcelViewResult | null): ProfileInvoiceExcelViewResult | null => {
     if (!d || !d.rows) return d;
     return {
