@@ -2480,7 +2480,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         break;
                     case "DR":
                         serviceHead = "Second Resource";
-                        isOther = false;
+                        isOther = true;
                         break;
                     case "BB":
                         serviceHead = "BD-Commission";
