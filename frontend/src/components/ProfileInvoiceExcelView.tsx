@@ -113,11 +113,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       ...d,
       rows: d.rows.map(r => {
         if (isDefaultUncheckedHead(r.serviceHead)) {
-          const hasOther = r.otherCharge != null && r.otherCharge > 0;
+          const hasOther = (r.otherCharge != null && r.otherCharge > 0) || r.isIncluded === true;
           return {
             ...r,
-            isIncluded: hasOther ? true : false,
-            otherCharge: hasOther ? r.otherCharge : null
+            isIncluded: hasOther,
+            otherCharge: hasOther ? (r.otherCharge ?? r.finalUsd ?? null) : null
           };
         }
         return r;
@@ -446,13 +446,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       totalInvoice: Math.round(newTotalInvoice)
     });
 
-    // 3. Background server save if code is a real invoice record
-    if (code > 0) {
+    // 3. Background server save if code is a real invoice record or virtual negative project code
+    if (code !== 0) {
       setTogglingCode(code);
       setAutoSaveStatus('saving');
       setError(null);
       try {
-        const payload: ProfileInvoiceRowUpdateRequest = { isIncluded: checked };
+        const payload: ProfileInvoiceRowUpdateRequest = { 
+          isIncluded: checked,
+          monthYear: cleanMonth,
+          groupOwnerCode: Number(selectedOwnerCode) || undefined
+        };
 
         // Bundle active cell edit on this row if any
         if (editingCell && editingCell.code === code) {
@@ -732,7 +736,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const codes = row.childInvoiceCodes?.length ? row.childInvoiceCodes : [];
         if (codes.length > 0) acc.push({ idx, codes });
       } else if ((row.rowType === 'Detail' || row.rowType === 'Standalone') && row.cmpProfInvoiceCode) {
-        acc.push({ idx, codes: [row.cmpProfInvoiceCode] });
+        if (row.cmpProfInvoiceCode > 0) {
+          acc.push({ idx, codes: [row.cmpProfInvoiceCode] });
+        } else if (row.childInvoiceCodes?.length) {
+          acc.push({ idx, codes: row.childInvoiceCodes.filter(c => c > 0) });
+        }
       }
       return acc;
     }, []);
@@ -747,7 +755,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       if (row.rowType === 'ProjectHeader') {
         (row.childInvoiceCodes ?? []).forEach(c => unique.add(c));
       } else if ((row.rowType === 'Detail' || row.rowType === 'Standalone') && row.cmpProfInvoiceCode) {
-        unique.add(row.cmpProfInvoiceCode);
+        if (row.cmpProfInvoiceCode > 0) {
+          unique.add(row.cmpProfInvoiceCode);
+        } else if (row.childInvoiceCodes?.length) {
+          row.childInvoiceCodes.forEach(c => { if (c > 0) unique.add(c); });
+        }
       }
     });
     return [...unique];
@@ -855,7 +867,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         }
       });
     } else if ((row.rowType === 'Detail' || row.rowType === 'Standalone') && row.cmpProfInvoiceCode) {
-      codes = [row.cmpProfInvoiceCode];
+      if (row.cmpProfInvoiceCode > 0) {
+        codes = [row.cmpProfInvoiceCode];
+      } else if (row.childInvoiceCodes?.length) {
+        codes = row.childInvoiceCodes.filter(c => c > 0);
+      }
     }
 
     if (codes.length === 0) return;
@@ -2047,7 +2063,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                               type="checkbox"
                               checked={
                                 isDefaultUncheckedHead(row.serviceHead)
-                                  ? Boolean(row.isIncluded && row.otherCharge != null && row.otherCharge > 0)
+                                  ? Boolean(row.isIncluded && ((row.otherCharge != null && row.otherCharge > 0) || (row.finalUsd != null && row.finalUsd > 0)))
                                   : (row.isIncluded !== false)
                               }
                               disabled={togglingCode === (row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)))}

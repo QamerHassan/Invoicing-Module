@@ -244,7 +244,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     setToEmail(cachedEmail);
 
     const monthFormatted = formatMonthDisplay(cleanMonth);
-    const invoiceTotal = activeOwnerProfile ? activeOwnerProfile.totalInvoice : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const invoiceTotal = activeOwnerProfile ? (activeOwnerProfile.totalCost || activeOwnerProfile.totalInvoice) : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
 
     setSubject(`Profile Invoice – ${activeOwnerName} – ${monthFormatted}`);
     setBody(
@@ -261,7 +261,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile]);
 
   const ownerTotals = useMemo(() => {
-    const usd = activeOwnerProfile ? activeOwnerProfile.totalInvoice : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const usd = activeOwnerProfile ? (activeOwnerProfile.totalCost || activeOwnerProfile.totalInvoice) : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
     const count = activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length;
     return { count, usd };
   }, [activeOwnerProfile, displayRows]);
@@ -589,8 +589,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
                         {p.rowsCount.toLocaleString()}
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
-                        {fmtUsd(p.totalInvoice)}
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-cost-color)' }}>
+                        {fmtUsd(p.totalCost || p.totalInvoice)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button

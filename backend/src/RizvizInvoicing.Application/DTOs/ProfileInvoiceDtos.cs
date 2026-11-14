@@ -148,6 +148,8 @@ public class ProfileInvoiceRowUpdateRequest
     public int? ProRateDays { get; set; }
     public int? MonthDays { get; set; }
     public string? SalaryRate { get; set; }
+    public string? MonthYear { get; set; }
+    public int? GroupOwnerCode { get; set; }
 }
 
 public class ProfileInvoiceProjectUpdateRequest

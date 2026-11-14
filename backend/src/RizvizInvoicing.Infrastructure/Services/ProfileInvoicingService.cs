@@ -1036,9 +1036,115 @@ public class ProfileInvoicingService : IProfileInvoicingService
         return Convert.ToInt32(res ?? 0) == 1;
     }
 
+    public async Task<ProfileInvoiceRowUpdateResponse> UpdateRizvizShareIncludedAsync(
+        int projectCode, ProfileInvoiceRowUpdateRequest request, string username, CancellationToken ct = default)
+    {
+        var response = new ProfileInvoiceRowUpdateResponse();
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+        {
+            await conn.OpenAsync(ct);
+        }
+
+        string cleanMonth = (request.MonthYear ?? "").Trim().Replace("-", "").ToUpper();
+        string scValue = (request.IsIncluded == true) ? "RS:1" : "RS:0";
+
+        // 1. Fetch relevant JH or SL row to find grpOwnerCode and invoiceMonth
+        int grpOwnerCode = request.GroupOwnerCode ?? 0;
+        string invoiceMonth = cleanMonth;
+        string currSc = "";
+
+        using (var cmdFind = conn.CreateCommand())
+        {
+            cmdFind.CommandText = @"
+                SELECT TOP 1 prfgrp_own_code, invoice_month, ISNULL(shortcode, '')
+                FROM dbo.Profile_invoicing
+                WHERE project_code = @p
+                  AND (@m = '' OR REPLACE(RTRIM(invoice_month), '-', '') = @m)
+                  AND resource_type IN ('JH', 'SL')
+                ORDER BY CASE WHEN resource_type = 'JH' THEN 1 ELSE 2 END";
+            cmdFind.Parameters.Add(Param("@p", projectCode));
+            cmdFind.Parameters.Add(Param("@m", cleanMonth));
+            using var rdr = await cmdFind.ExecuteReaderAsync(ct);
+            if (await rdr.ReadAsync(ct))
+            {
+                if (grpOwnerCode == 0) grpOwnerCode = rdr.GetInt32(0);
+                if (string.IsNullOrEmpty(invoiceMonth)) invoiceMonth = rdr.GetString(1).Trim().Replace("-", "").ToUpper();
+                currSc = rdr.GetString(2);
+            }
+        }
+
+        if (string.IsNullOrEmpty(invoiceMonth))
+        {
+            response.Success = false;
+            response.Message = $"Project #{projectCode} not found in profile invoicing.";
+            return response;
+        }
+
+        bool isFinalized = await IsMonthFinalizedAsync(invoiceMonth, ct);
+
+        using (var tx = await conn.BeginTransactionAsync(ct))
+        {
+            try
+            {
+                using var cmdUpd = conn.CreateCommand();
+                cmdUpd.Transaction = (DbTransaction)tx;
+                cmdUpd.CommandText = @"
+                    UPDATE dbo.Profile_invoicing
+                    SET shortcode = @sc,
+                        last_modified_by = @user,
+                        last_modified_time = GETDATE()
+                    WHERE project_code = @p
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                      AND resource_type IN ('JH', 'SL')";
+                cmdUpd.Parameters.Add(Param("@sc", scValue));
+                cmdUpd.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
+                cmdUpd.Parameters.Add(Param("@p", projectCode));
+                cmdUpd.Parameters.Add(Param("@m", invoiceMonth));
+                await cmdUpd.ExecuteNonQueryAsync(ct);
+
+                // Audit log if finalized
+                if (isFinalized && currSc != scValue)
+                {
+                    using var cmdLog = conn.CreateCommand();
+                    cmdLog.Transaction = (DbTransaction)tx;
+                    cmdLog.CommandText = @"
+                        INSERT INTO dbo.Profile_invoice_audit_log
+                        (username, timestamp, invoice_month, project_code, field_name, old_value, new_value, is_month_finalized)
+                        VALUES (@u, GETDATE(), @m, @p, 'rizviz_share_included', @old, @new, 1)";
+                    cmdLog.Parameters.Add(Param("@u", username));
+                    cmdLog.Parameters.Add(Param("@m", invoiceMonth));
+                    cmdLog.Parameters.Add(Param("@p", projectCode));
+                    cmdLog.Parameters.Add(Param("@old", currSc.StartsWith("RS:1") ? "1" : "0"));
+                    cmdLog.Parameters.Add(Param("@new", scValue.StartsWith("RS:1") ? "1" : "0"));
+                    await cmdLog.ExecuteNonQueryAsync(ct);
+                }
+
+                await tx.CommitAsync(ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+
+        var excelView = await GetExcelViewAsync(grpOwnerCode, invoiceMonth, ct);
+        response.ExcelView = excelView;
+        response.Success = true;
+        response.Message = $"Rizviz Share for Project #{projectCode} updated.";
+        return response;
+    }
+
     public async Task<ProfileInvoiceRowUpdateResponse> UpdateRowAsync(
         long cmpProfInvoiceCode, ProfileInvoiceRowUpdateRequest request, string username, CancellationToken ct = default)
     {
+        if (cmpProfInvoiceCode < 0)
+        {
+            int projectCode = (int)(-cmpProfInvoiceCode);
+            return await UpdateRizvizShareIncludedAsync(projectCode, request, username, ct);
+        }
+
         var response = new ProfileInvoiceRowUpdateResponse();
         var conn = _db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open)
@@ -1820,7 +1926,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         // 2. Fetch saved rows from dbo.Profile_invoicing
         // Sorted: prfown_code A, project_code A, interview_code A, charg_type_code A
-        var savedRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed)>();
+        var savedRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
         using (var cmd = conn.CreateCommand())
         {
             string ownerFilter;
@@ -1843,7 +1949,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                        CASE WHEN ISNULL(p.profile_type,'')='E' OR ISNULL(po.Profile_type,'')='E' THEN 1 ELSE 0 END AS is_executive,
                        pi.charged_amt_pkr, pi.exchange_rate, pi.share_amount,
                        ISNULL(pi.to_be_discussed, 0) AS to_be_discussed,
-                       ISNULL(pi.is_processed, 0) AS is_processed
+                       ISNULL(pi.is_processed, 0) AS is_processed,
+                       pi.shortcode
                 FROM dbo.Profile_invoicing pi
                 LEFT JOIN mkt.Projects p ON p.project_code = pi.project_code
                 LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pi.prfown_code
@@ -1878,7 +1985,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     reader.IsDBNull(12) ? null : reader.GetDecimal(12),
                     reader.IsDBNull(13) ? null : reader.GetDecimal(13),
                     Convert.ToBoolean(reader.GetValue(14)),
-                    Convert.ToBoolean(reader.GetValue(15))
+                    Convert.ToBoolean(reader.GetValue(15)),
+                    reader.IsDBNull(16) ? null : reader.GetString(16).Trim()
                 ));
             }
         }
@@ -2059,7 +2167,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             string ProjName,
             string ProfileOwner,
             string StartEndDate,
-            List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed)> Rows
+            List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)> Rows
         )>();
 
         int curIdx = 0;
@@ -2071,7 +2179,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             int curProj = curRow.ProjectCode ?? 0;
             int curInt = curRow.InterviewCode ?? 0;
 
-            var blockRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed)>();
+            var blockRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
             int endIdx = curIdx;
             for (int k = curIdx; k < totalSavedCount; k++)
             {
@@ -2143,13 +2251,16 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             // Rizviz Share: project_code > 0 par JH rows ka sum(share_amount) (JH na ho to SL)
             decimal projShare = 0;
+            bool isRizvizShareInc = false;
+            var targetShareRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
             if (curProj > 0)
             {
                 var jhRows = block.Rows.Where(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase)).ToList();
-                var targetShareRows = jhRows.Count > 0
+                targetShareRows = jhRows.Count > 0
                     ? jhRows
                     : block.Rows.Where(r => string.Equals(r.ResourceType, "SL", StringComparison.OrdinalIgnoreCase)).ToList();
                 projShare = Math.Round(targetShareRows.Sum(r => r.ShareAmount ?? 0m), 0, MidpointRounding.AwayFromZero);
+                isRizvizShareInc = targetShareRows.Any(r => r.Shortcode != null && r.Shortcode.Trim().StartsWith("RS:1", StringComparison.OrdinalIgnoreCase));
             }
 
             // Project total = sum(Round(total_usd_cost, 0)) + projShare
@@ -2478,23 +2589,32 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     });
 
                     // Ek alag "Rizviz Share" detail row aakhri JH (ya SL) row ke baad, sirf share>0.
-                    // Share project ke Total Cost mein jaye, Total Invoice (Actual+Other) mein nahi.
+                    // Share project ke Total Cost mein jaye. Agar IsIncluded == true ho to Other Charge aur sumOther mein bhi jaye.
                     if (projShare > 0 && rIdx == lastShareTargetIdx)
                     {
+                        if (isRizvizShareInc)
+                        {
+                            sumOther += projShare;
+                        }
+
                         result.Rows.Add(new ProfileInvoiceExcelViewRowDto
                         {
                             RowType = "Detail",
                             CmpProfInvoiceCode = -curProj, // Assign non-null negative ID for unique UI identification
-                            IsIncluded = false, // By default uncheck
+                            IsIncluded = isRizvizShareInc, // Persisted state from JH row's shortcode
                             IsExecutive = string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase),
                             BranchCode = curBranchCode,
                             IsForeign = (curBranchCode == ForeignBranchCode),
                             ServiceHead = "Rizviz Share",
                             FinalUsd = projShare,
-                            OtherCharge = null, // Share Total Invoice mein nahi jaye
+                            OtherCharge = isRizvizShareInc ? projShare : null,
                             ChargedAmtPkr = null,
                             ExchangeRate = null,
-                            ShareAmount = null
+                            ShareAmount = null,
+                            ToBeDiscussed = targetShareRows.Any(r => r.ToBeDiscussed),
+                            IsToBeDiscussed = targetShareRows.Any(r => r.ToBeDiscussed),
+                            IsProcessed = targetShareRows.Count > 0 && targetShareRows.All(r => r.IsProcessed),
+                            ChildInvoiceCodes = targetShareRows.Select(r => r.Code).ToList()
                         });
                     }
                 }
@@ -3046,7 +3166,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 OwnerName = string.IsNullOrWhiteSpace(view.GroupOwnerName) ? $"Owner #{oCode}" : view.GroupOwnerName,
                 Month = cleanMonth,
                 TotalCost = view.TotalCostSum,
-                TotalInvoice = Math.Round(totalUsd, 0),
+                TotalInvoice = view.TotalCostSum,
                 TotalActual = view.ActualChargesSum,
                 TotalOther = view.OtherChargeSum,
                 RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,

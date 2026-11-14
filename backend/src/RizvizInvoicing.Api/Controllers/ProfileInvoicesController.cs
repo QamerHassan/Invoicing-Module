@@ -165,7 +165,7 @@ public class ProfileInvoicesController : ControllerBase
         [FromBody] ProfileInvoiceRowUpdateRequest request,
         CancellationToken ct)
     {
-        if (cmpProfInvoiceCode <= 0)
+        if (cmpProfInvoiceCode == 0)
             return BadRequest(new { message = "Valid cmpProfInvoiceCode is required." });
 
         if (request is null)

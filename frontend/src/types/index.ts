@@ -242,6 +242,8 @@ export interface ProfileInvoiceRowUpdateRequest {
   proRateDays?: number | null;
   monthDays?: number | null;
   salaryRate?: string | null;
+  monthYear?: string | null;
+  groupOwnerCode?: number | null;
 }
 
 export interface ProfileInvoiceProjectUpdateRequest {
