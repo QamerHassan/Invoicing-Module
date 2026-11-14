@@ -3166,7 +3166,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 OwnerName = string.IsNullOrWhiteSpace(view.GroupOwnerName) ? $"Owner #{oCode}" : view.GroupOwnerName,
                 Month = cleanMonth,
                 TotalCost = view.TotalCostSum,
-                TotalInvoice = view.TotalCostSum,
+                TotalInvoice = view.TotalInvoice,
                 TotalActual = view.ActualChargesSum,
                 TotalOther = view.OtherChargeSum,
                 RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,

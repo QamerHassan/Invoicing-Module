@@ -561,7 +561,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                   <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Owner Name</th>
                   <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                   <th style={{ minWidth: '110px', textAlign: 'center' }}>Total Invoices</th>
-                  <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Amount (USD)</th>
+                  <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
                   <th style={{ minWidth: '90px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
@@ -589,8 +589,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
                         {p.rowsCount.toLocaleString()}
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-cost-color)' }}>
-                        {fmtUsd(p.totalCost || p.totalInvoice)}
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
+                        {fmtUsd(p.totalInvoice || p.totalCost)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button

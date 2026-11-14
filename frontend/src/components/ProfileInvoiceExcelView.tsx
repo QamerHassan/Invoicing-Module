@@ -1004,7 +1004,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       }
       setProcessMsg({ type: 'success', text: res.message || `${res.updatedCount} invoice(s) processed successfully.` });
       flashMsg('success', res.message || `${res.updatedCount} invoice(s) processed successfully. Processed tab mein move ho chuki hain.`);
-      await handleLoad();
+      setSelectedOwnerCode('');
+      if (onOwnerChange) onOwnerChange('');
+      setData(null);
       setUnprocessedRefreshKey(k => k + 1);
       await fetchUnprocessedOwners();
       setActiveExcelTab('processed');
@@ -1122,13 +1124,13 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       ) : activeExcelTab === 'discussed' ? (
         <ProfileInvoiceToBeDiscussedTab
           groupOwners={postedOwners}
-          initialOwnerCode={selectedOwnerCode}
+          initialOwnerCode=""
           initialMonth={cleanMonth}
         />
       ) : activeExcelTab === 'processed' ? (
         <ProfileInvoiceProcessedTab
           groupOwners={postedOwners}
-          initialOwnerCode={selectedOwnerCode}
+          initialOwnerCode=""
           initialMonth={cleanMonth}
           onRefreshUnprocessed={() => {
             setUnprocessedRefreshKey(k => k + 1);
@@ -1138,7 +1140,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       ) : activeExcelTab === 'email' ? (
         <ProfileInvoiceEmailTab
           groupOwners={postedOwners.length > 0 ? postedOwners : _groupOwners}
-          initialOwnerCode={selectedOwnerCode}
+          initialOwnerCode={emailSelectedCodes ? selectedOwnerCode : ""}
           initialMonth={cleanMonth}
           selectedCodes={emailSelectedCodes ?? undefined}
           selectedRowsPreview={emailSelectedRows ?? undefined}

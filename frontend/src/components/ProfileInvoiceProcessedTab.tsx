@@ -103,8 +103,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   };
 
   // Grand totals
-  const totalCostSum = useMemo(() => {
-    return filteredProfiles.reduce((acc, p) => acc + (p.totalCost || 0), 0);
+  const totalInvoiceSum = useMemo(() => {
+    return filteredProfiles.reduce((acc, p) => acc + (p.totalInvoice || p.totalCost || 0), 0);
   }, [filteredProfiles]);
 
   const totalRowsSum = useMemo(() => {
@@ -358,7 +358,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                 <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Name</th>
                 <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                 <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
-                <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Cost</th>
+                <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
                 <th style={{ minWidth: '80px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
@@ -400,8 +400,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
                         {p.rowsCount} rows
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-cost-color)' }}>
-                        {fmtUsd(p.totalCost)}
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
+                        {fmtUsd(p.totalInvoice || p.totalCost)}
                       </td>
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         <button
@@ -445,8 +445,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                   <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
                     {totalRowsSum} rows
                   </td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--excel-cost-color)' }}>
-                    {fmtUsd(totalCostSum)}
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#2563eb' }}>
+                    {fmtUsd(totalInvoiceSum)}
                   </td>
                   <td style={{ textAlign: 'center' }}>—</td>
                 </tr>
