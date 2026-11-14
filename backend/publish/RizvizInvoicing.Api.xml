@@ -1,0 +1,274 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>RizvizInvoicing.Api</name>
+    </assembly>
+    <members>
+        <member name="M:RizvizInvoicing.Api.Controllers.AdvanceFundsController.GetAdvanceFunds(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Retrieve all invoice advance fund disbursements for a specified month.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.AdvanceFundsController.CreateAdvanceFund(RizvizInvoicing.Application.DTOs.CreateAdvanceFundRequest,System.Threading.CancellationToken)">
+            <summary>
+            Record an advance fund payment/disbursement to a vendor for a month.
+            Uses atomic sequence generation for invoice_code.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.AdvanceFundsController.DeleteAdvanceFund(System.Int32,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Delete an advance fund entry by invoice code and month.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.AuthController.Login(RizvizInvoicing.Application.DTOs.LoginRequest)">
+            <summary>
+            Authenticate user credentials and return JWT bearer token.
+            Supports transparent upgrade of legacy plain-text passwords to BCrypt.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.CompanyInvoicesController.GetCompanyInvoices(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Retrieve all company invoice records for a given billing month/year.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.CompanyInvoicesController.GetProfileProjects(System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Retrieve profile owners and their active projects for the Profile Owners - Projects grid (matching dw_prf_invoicing).
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.CompanyInvoicesController.ExportExcel(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Export company invoices in PowerBuilder uf_calculate_salary CSV/Excel layout with summary.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.CompanyInvoicesController.CalculateInvoices(RizvizInvoicing.Application.DTOs.CalculateCompanyInvoicesRequest,System.Threading.CancellationToken)">
+            <summary>
+            Calculate company invoices for a billing cycle from profile invoicing source data.
+            Recalculation safety guard: only unposted records are replaced if ReplaceExisting is true.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.CompanyInvoicesController.PostInvoices(System.String,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Post all unposted company invoices for the given month, marking them with Status 'P' and timestamps.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.DashboardController.GetDashboard(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Retrieve aggregated executive dashboard KPIs, monthly trends, and top vendor metrics.
+            Optionally filtered by billing month (e.g. OCT26, SEP26). Cached for 2 minutes.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.DashboardController.GetBillingMonths(System.Threading.CancellationToken)">
+            <summary>
+            Get all available billing months across company, profile, and final invoicing.
+            Returns sorted latest first (e.g. OCT26, SEP26, MAY26, APR26). Cached for 5 minutes.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.EmailSettingsController.Get(System.Threading.CancellationToken)">
+            <summary>
+            Get saved sender email settings for the current user.
+            Returns only { senderEmail, hasSavedPassword } - password is never returned.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.EmailSettingsController.Save(RizvizInvoicing.Api.Controllers.SaveEmailSettingsRequest,System.Threading.CancellationToken)">
+            <summary>
+            Save (upsert) encrypted sender email settings for the current user.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.EmailSettingsController.Delete(System.Threading.CancellationToken)">
+            <summary>
+            Remove saved sender email settings for the current user.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.FinalInvoiceController.GetPreview(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Preview real-time final invoice settlement calculations (Silmun + Paid Invoices - Advances = Final Payable).
+            Does not commit to database.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.FinalInvoiceController.GetFinalInvoice(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Retrieve saved final invoice settlement for the specified month from dbo.final_invoicing.
+            Returns 200 with null if not yet finalized.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.FinalInvoiceController.SaveFinalInvoice(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Finalize and save the final settlement into dbo.final_invoicing.
+            Generates next InvCode atomically using dbo.NumberControl.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetVendors(System.Threading.CancellationToken)">
+            <summary>Retrieve active vendors from setups.vendors.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetProfileOwners(System.Threading.CancellationToken)">
+            <summary>Retrieve active profile owners from prof.Profile_Owners.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetProfileGroupOwners(System.Threading.CancellationToken)">
+            <summary>Retrieve profile group owners from prof.Profile_Owners.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetExchangeRates(System.Threading.CancellationToken)">
+            <summary>Retrieve active currency exchange rates from setups.exchange_rate.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetEntities(System.Threading.CancellationToken)">
+            <summary>Retrieve HRMS employee entities from hrms.entity.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetProjects(System.Threading.CancellationToken)">
+            <summary>Retrieve marketing projects from mkt.Projects.</summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.LookupsController.GetPostedGroupOwners(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Returns DISTINCT profile group owners who have at least one row in dbo.Profile_invoicing.
+            Optionally filtered by invoice_month. Used to populate the owner dropdown in Excel View.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.PdfController.DownloadFinalInvoicePdf(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Generate and download a server-side vector PDF document replicating the PowerBuilder d_rpt_final_invoice report.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.PdfController.GetPrintData(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Retrieve structured invoice report data (summary, advance funds, live calculations) for browser print preview.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.CalculateDryRun(System.Int32,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Calculate profile invoicing in DRY-RUN mode (writes nothing to database).
+            Merges 4 sources: Company Invoicing, Interviews, Recurring Projects, Marketing Charges.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.Save(RizvizInvoicing.Application.DTOs.ProfileInvoiceSaveRequest,System.Threading.CancellationToken)">
+            <summary>
+            Save / Post profile invoices for one Group Owner + Month.
+            Amounts are recomputed server-side; client payload is used only for selection.
+            Once posted (status='P'), rows cannot be un-posted or deleted — matches legacy behaviour.
+            </summary>
+            <remarks>
+            Returns 409 Conflict if invoices already exist for this Group Owner + Month.
+            Returns 422 Unprocessable Entity if calculation yields zero rows.
+            </remarks>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetSavedRows(System.Int32,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Load existing saved profile invoice rows from dbo.Profile_invoicing.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.IsMonthFinalized(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Check whether an invoice month has been finalized in dbo.final_invoicing.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetInvoicedMonths(System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Get distinct normalized invoiced months from dbo.Profile_invoicing, sorted latest first.
+            If ownerCode is supplied, returns months for that owner only.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.UpdateRow(System.Int64,RizvizInvoicing.Application.DTOs.ProfileInvoiceRowUpdateRequest,System.Threading.CancellationToken)">
+            <summary>
+            Update editable fields (invoice_number, remarks, status, amounts, include checkbox) of a saved profile invoice row.
+            Recalculates charged amounts and totals server-side.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.UpdateProject(System.Int32,RizvizInvoicing.Application.DTOs.ProfileInvoiceProjectUpdateRequest,System.Threading.CancellationToken)">
+            <summary>
+            Update editable project fields (Agreed Rate, Days, Salary Rate) from Excel View.
+            Recalculates pro-rate amounts and Excel View totals live.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetExcelView(System.Nullable{System.Int32},System.String,RizvizInvoicing.Application.DTOs.ProfileInvoiceGenerateOpenRequest,System.Threading.CancellationToken)">
+            <summary>
+            Get structured Excel view matching PB cb_10 layout for saved rows of a Group Owner + Month.
+            Supports both GET and POST requests. Automatically resolves child to group owner and
+            generates invoice rows from source tables if not already generated.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetExcelDownload(System.Int32,System.String,System.Boolean,System.Boolean,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Download real .xlsx workbook matching PB cb_10 layout for saved rows of a Group Owner + Month.
+            When processedOnly=true, only processed invoice records (is_processed=1) for the recipient are included.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.SendEmail(RizvizInvoicing.Application.DTOs.SendProfileInvoiceEmailRequest,System.Threading.CancellationToken)">
+            <summary>
+            Send generated Excel invoice workbook via email attachment.
+            Uses processed invoice records (is_processed=1) strictly belonging to the specified recipient.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetProcessed(System.String,System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Get processed profile invoices for month and optional group owner.
+            By default (raw=false), returns profile-wise aggregate (owner code, name, month, total cost, total invoice, rows count).
+            When raw=true, returns raw individual invoice rows.
+            Live query directly against database with zero caching.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetProcessedProfiles(System.String,System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Get profile-wise aggregate of processed invoices for month.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetOwnerUnprocessedStatus(System.Int32,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Check unprocessed invoice count and pending amount for a specific profile owner and month.
+            Used by Email View warning popup.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetUnprocessed(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Get unprocessed profile invoices for month (matches PB dw_status_unprocessed).
+            Accepts month or monthYear query param; defaults to current month if unspecified.
+            Live query directly against database with zero caching.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetAuditLogs(System.String,System.Nullable{System.Int32},System.Nullable{System.Int64},System.Threading.CancellationToken)">
+            <summary>
+            Get change audit log entries from dbo.profile_invoice_audit_log.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetToBeDiscussed(System.String,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Get invoices marked as needing discussion (status='D' or support_status='D' or remarks containing discussion).
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.AddToBeDiscussed(RizvizInvoicing.Application.DTOs.ProfileInvoiceAddDiscussedRequest,System.Threading.CancellationToken)">
+            <summary>
+            Mark invoice codes as To Be Discussed.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.RemoveFromToBeDiscussed(RizvizInvoicing.Application.DTOs.ProfileInvoiceRemoveDiscussedRequest,System.Threading.CancellationToken)">
+            <summary>
+            Remove invoice codes from To Be Discussed.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.UpdateDiscussNote(System.Int64,RizvizInvoicing.Application.DTOs.ProfileInvoiceUpdateDiscussNoteRequest,System.Threading.CancellationToken)">
+            <summary>
+            Update discuss note for an invoice code.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.ProcessInvoices(RizvizInvoicing.Application.DTOs.ProfileInvoiceProcessRequest,System.Threading.CancellationToken)">
+            <summary>
+            Mark invoice codes as Processed.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.ProcessInvoicesByOwner(RizvizInvoicing.Application.DTOs.ProfileInvoiceProcessByOwnerRequest,System.Threading.CancellationToken)">
+            <summary>
+            Process all unprocessed invoices for the given owner codes and month.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GenerateAndOpen(RizvizInvoicing.Application.DTOs.ProfileInvoiceGenerateOpenRequest,System.Nullable{System.Int32},System.String,System.Threading.CancellationToken)">
+            <summary>
+            Generate (save) invoices for a profile owner + month if not yet generated,
+            then return the Excel view. Called when "Open" is clicked in the Unprocessed tab.
+            Safe to call when rows already exist — skips generation, loads existing rows.
+            Supports both POST and GET.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.UnprocessInvoices(RizvizInvoicing.Application.DTOs.ProfileInvoiceUnprocessRequest,System.Threading.CancellationToken)">
+            <summary>
+            Move invoice codes back from Processed to Active (unprocess).
+            </summary>
+        </member>
+    </members>
+</doc>
