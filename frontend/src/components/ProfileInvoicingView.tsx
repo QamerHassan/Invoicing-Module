@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   Search, 
@@ -84,11 +84,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
 }) => {
   const [groupOwners, setGroupOwners] = useState<ProfileGroupOwnerDto[]>([]);
   const [selectedOwnerCode, setSelectedOwnerCode] = useState<number | ''>('');
-  const selectedOwnerName = useMemo(() => {
-    if (!selectedOwnerCode) return '';
-    const owner = groupOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode));
-    return owner?.profileName ?? '';
-  }, [groupOwners, selectedOwnerCode]);
 
   const { selectedMonth, availableMonths } = useMonth();
   const effectiveMonth = (selectedMonth || initialMonth || 'OCT26').replace('-', '').toUpperCase();
