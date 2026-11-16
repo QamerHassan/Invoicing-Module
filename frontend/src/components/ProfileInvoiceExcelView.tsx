@@ -1033,6 +1033,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           alignItems: 'center',
           flexWrap: 'nowrap',
           overflowX: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
           minWidth: 0
         }}>
           <button
@@ -1050,13 +1052,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'sheet' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <FileSpreadsheet size={14} />
-            Excel Sheet View
+            <FileSpreadsheet size={14} style={{ flexShrink: 0 }} />
+            <span>Excel Sheet View</span>
           </button>
 
           <button
@@ -1074,13 +1077,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'unprocessed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <Clock size={14} />
-            Unprocessed
+            <Clock size={14} style={{ flexShrink: 0 }} />
+            <span>Unprocessed</span>
           </button>
 
           <button
@@ -1098,13 +1102,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'discussed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <MessageSquare size={14} />
-            To Be Discussed
+            <MessageSquare size={14} style={{ flexShrink: 0 }} />
+            <span>To Be Discussed</span>
           </button>
 
           <button
@@ -1122,13 +1127,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'processed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <Archive size={14} />
-            Processed
+            <Archive size={14} style={{ flexShrink: 0 }} />
+            <span>Processed</span>
           </button>
 
           <button
@@ -1146,13 +1152,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'email' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <Mail size={14} />
-            Email
+            <Mail size={14} style={{ flexShrink: 0 }} />
+            <span>Email</span>
           </button>
 
           <button
@@ -1170,13 +1177,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               boxShadow: activeExcelTab === 'audit' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.35rem'
             }}
           >
-            <History size={14} />
-            Change Summary
+            <History size={14} style={{ flexShrink: 0 }} />
+            <span>Change Summary</span>
           </button>
         </div>
 

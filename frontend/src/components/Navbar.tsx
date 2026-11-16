@@ -52,7 +52,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       position: 'sticky',
       top: 0,
       zIndex: 100,
-      padding: '0 1rem'
+      padding: '0 0.75rem',
+      overflowX: 'hidden'
     }}>
       <div style={{
         maxWidth: '100%',
@@ -60,10 +61,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        height: '44px'
+        height: '44px',
+        gap: '0.5rem',
+        minWidth: 0
       }}>
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
           <div style={{
             width: '28px',
             height: '28px',
@@ -72,22 +75,34 @@ export const Navbar: React.FC<NavbarProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 10px rgba(99, 102, 241, 0.35)'
+            boxShadow: '0 0 10px rgba(99, 102, 241, 0.35)',
+            flexShrink: 0
           }}>
             <Building2 size={16} color="#ffffff" />
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
-            <span style={{ fontWeight: 800, fontSize: '0.95rem', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', whiteSpace: 'nowrap' }}>
+            <span style={{ fontWeight: 800, fontSize: '0.95rem', letterSpacing: '-0.02em', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
               RIZVIZ <span style={{ color: '#818cf8', fontWeight: 600 }}>INVOICING</span>
             </span>
-            <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <span className="brand-subtext" style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
               Financial Suite
             </span>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <nav style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+          flex: 1,
+          justifyContent: 'center',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          minWidth: 0,
+          padding: '0 0.25rem'
+        }}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = currentTab === item.id;
@@ -96,6 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 key={item.id}
                 id={`nav-${item.id}`}
                 onClick={() => setCurrentTab(item.id)}
+                className="nav-btn"
                 style={{
                   height: '32px',
                   background: active 
@@ -108,12 +124,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ? '1.5px solid #3730a3' 
                     : isLight ? '1.5px solid rgba(100, 116, 139, 0.4)' : '1.5px solid rgba(255, 255, 255, 0.18)',
                   borderRadius: '6px',
-                  padding: '0.2rem 0.75rem',
-                  fontSize: '0.86rem',
+                  padding: '0.2rem 0.65rem',
+                  fontSize: '0.82rem',
                   fontWeight: active ? 800 : 700,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
+                  gap: '0.35rem',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   boxShadow: active 
                     ? '0 2px 8px rgba(79, 70, 229, 0.4)' 
                     : '0 1px 2px rgba(0, 0, 0, 0.05)',
@@ -121,15 +139,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   transition: 'all var(--transition-fast)'
                 }}
               >
-                <Icon size={15} />
-                <span>{item.label}</span>
+                <Icon size={15} style={{ flexShrink: 0 }} />
+                <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>
               </button>
             );
           })}
         </nav>
 
         {/* User & Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
           {/* Theme Toggle */}
           <button
             id="btn-toggle-theme"
@@ -168,7 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {user && (
-            <div style={{
+            <div className="user-badge-container" style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.45rem',
@@ -176,7 +194,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               border: '1px solid var(--border-subtle)',
               padding: '0.15rem 0.55rem',
               borderRadius: 'var(--radius-full)',
-              height: '28px'
+              height: '28px',
+              flexShrink: 0,
+              whiteSpace: 'nowrap'
             }}>
               <div style={{
                 width: '20px',
@@ -186,15 +206,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#818cf8'
+                color: '#818cf8',
+                flexShrink: 0
               }}>
                 <ShieldCheck size={13} />
               </div>
-              <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-main)' }}>
+              <div style={{ textAlign: 'left', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                   {user.fullName || user.username}
                 </span>
-                <span style={{ fontSize: '0.62rem', color: 'var(--text-subtle)', marginLeft: '0.3rem' }}>
+                <span className="user-role-text" style={{ fontSize: '0.62rem', color: 'var(--text-subtle)', marginLeft: '0.3rem', whiteSpace: 'nowrap' }}>
                   ({user.role})
                 </span>
               </div>
@@ -214,7 +235,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               padding: '0.15rem 0.55rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.3rem'
+              gap: '0.3rem',
+              flexShrink: 0,
+              whiteSpace: 'nowrap'
             }}
           >
             <LogOut size={13} />

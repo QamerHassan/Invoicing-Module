@@ -514,6 +514,8 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
               alignItems: 'center',
               flexWrap: 'nowrap',
               overflowX: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
               minWidth: 0
             }}>
               <button
@@ -523,11 +525,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <FileSpreadsheet size={13} />
-                Excel Sheet View
+                <FileSpreadsheet size={13} style={{ flexShrink: 0 }} />
+                <span>Excel Sheet View</span>
               </button>
 
               <button
@@ -537,11 +540,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <Clock size={13} />
-                Unprocessed
+                <Clock size={13} style={{ flexShrink: 0 }} />
+                <span>Unprocessed</span>
               </button>
 
               <button
@@ -551,11 +555,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <MessageSquare size={13} />
-                To Be Discussed
+                <MessageSquare size={13} style={{ flexShrink: 0 }} />
+                <span>To Be Discussed</span>
               </button>
 
               <button
@@ -565,11 +570,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <Archive size={13} />
-                Processed
+                <Archive size={13} style={{ flexShrink: 0 }} />
+                <span>Processed</span>
               </button>
 
               <button
@@ -579,11 +585,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <Mail size={13} />
-                Email
+                <Mail size={13} style={{ flexShrink: 0 }} />
+                <span>Email</span>
               </button>
 
               <button
@@ -593,11 +600,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                   border: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
-                <History size={13} />
-                Change Summary
+                <History size={13} style={{ flexShrink: 0 }} />
+                <span>Change Summary</span>
               </button>
             </div>
 
