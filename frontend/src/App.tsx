@@ -205,7 +205,7 @@ const AppContent: React.FC = () => {
             ● Database {dbInfo.connected ? `Connected (${dbInfo.database || 'Invoicing_System'})` : 'Disconnected'}
           </span>
         </div>
-        <div>
+        <div className="footer-right-text">
           <span>PowerBuilder Migration: .NET 8 Web API + React Vite + QuestPDF</span>
         </div>
       </footer>

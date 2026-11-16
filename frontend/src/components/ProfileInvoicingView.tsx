@@ -497,27 +497,9 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       ) : (
         <>
           {/* Header Row: Tabs on Left, Month Selector + Profile Invoicing Button on Right */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
-            borderBottom: '1px solid var(--border-subtle)',
-            paddingBottom: '4px',
-            minHeight: '34px',
-            flexWrap: 'nowrap'
-          }}>
+          <div className="profile-subtabs-header">
             {/* Left Side: All 6 tabs in one line */}
-            <div style={{
-              display: 'flex',
-              gap: '4px',
-              alignItems: 'center',
-              flexWrap: 'nowrap',
-              overflowX: 'auto',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              minWidth: 0
-            }}>
+            <div className="profile-subtabs-list">
               <button
                 onClick={() => { setInitialExcelTab('sheet'); setActiveSubTab('excel'); }}
                 className="compact-tab-btn"
@@ -610,7 +592,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
             </div>
 
             {/* Right Side: Month dropdown + Profile Invoicing button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            <div className="profile-subtabs-right">
               <GlobalMonthSelector />
               <button
                 id="btn-subtab-profile-invoicing-active"

@@ -1016,27 +1016,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {/* Header Row: Tabs on Left, Month Selector + Profile Invoicing Button on Right */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '0.75rem',
-        borderBottom: '1px solid var(--border-subtle)',
-        paddingBottom: '4px',
-        minHeight: '34px',
-        flexWrap: 'nowrap'
-      }}>
+      <div className="profile-subtabs-header">
         {/* Left Side: All 6 tabs in one line */}
-        <div style={{
-          display: 'flex',
-          gap: '5px',
-          alignItems: 'center',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          minWidth: 0
-        }}>
+        <div className="profile-subtabs-list">
           <button
             onClick={() => setActiveExcelTab('sheet')}
             className="compact-tab-btn"
@@ -1190,7 +1172,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
         {/* Right Side: Month dropdown + Profile Invoicing button */}
         {headerRight && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          <div className="profile-subtabs-right">
             {headerRight}
           </div>
         )}
@@ -1267,7 +1249,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             </div>
           )}
           <div className="compact-toolbar" style={{ minHeight: '34px', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <div className="compact-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
               <div style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1277,13 +1259,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 borderRadius: '7px',
                 padding: '2px 8px',
                 height: '32px',
-                boxShadow: '0 1px 4px rgba(99, 102, 241, 0.15)'
+                boxShadow: '0 1px 4px rgba(99, 102, 241, 0.15)',
+                flex: '1 1 auto',
+                maxWidth: '100%'
               }}>
                 <Users size={15} color="#6366f1" style={{ flexShrink: 0 }} />
                 <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                   Profile Owner:
                 </span>
-                <div style={{ minWidth: '240px' }}>
+                <div style={{ flex: '1 1 auto', minWidth: '130px', maxWidth: '300px' }}>
                   <select
                     value={selectedOwnerCode ? String(selectedOwnerCode) : ''}
                     onChange={(e) => {
@@ -1399,7 +1383,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
               <button
                 onClick={handleDownload}
                 disabled={loading || downloading || !data || data.rows.length === 0}

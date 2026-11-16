@@ -150,7 +150,7 @@ html {
     gap: 0.25rem !important;
   }
 }
-@media (max-width: 992px) {
+@media (max-width: 900px) {
   html { font-size: 12px; }
   .brand-subtext {
     display: none !important;
@@ -159,10 +159,174 @@ html {
     display: none !important;
   }
 }
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   html { font-size: 11.5px; }
   .user-badge-container {
     padding: 0.15rem 0.35rem !important;
+  }
+  .footer-right-text {
+    display: none !important;
+  }
+}
+
+/* ─── Responsive Navbar & Layout ─────────────────────────────── */
+.navbar-header {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0 0.75rem;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: hidden;
+}
+
+.navbar-inner {
+  max-width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.navbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  justify-content: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  padding: 0 0.25rem;
+}
+.navbar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile & Tablet Navbar (< 900px) */
+@media (max-width: 900px) {
+  .navbar-inner {
+    display: grid !important;
+    grid-template-columns: auto 1fr !important;
+    grid-template-rows: auto auto !important;
+    height: auto !important;
+    padding: 6px 0 !important;
+    gap: 6px 8px !important;
+  }
+  .navbar-brand {
+    grid-column: 1 / 2 !important;
+    grid-row: 1 / 2 !important;
+  }
+  .navbar-actions {
+    grid-column: 2 / 3 !important;
+    grid-row: 1 / 2 !important;
+    justify-self: end !important;
+  }
+  .navbar-nav {
+    grid-column: 1 / 3 !important;
+    grid-row: 2 / 2 !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+    padding: 3px 0 !important;
+    border-top: 1px solid var(--border-subtle) !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .nav-btn {
+    height: 30px !important;
+    padding: 0.15rem 0.55rem !important;
+    font-size: 0.78rem !important;
+  }
+}
+
+/* ─── Responsive Sub-Tabs & Profile Invoicing Header ─────────── */
+.profile-subtabs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 4px;
+  min-height: 34px;
+}
+
+.profile-subtabs-list {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+}
+.profile-subtabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.profile-subtabs-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .profile-subtabs-header {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    padding-bottom: 6px !important;
+  }
+  .profile-subtabs-right {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  .profile-subtabs-list {
+    width: 100% !important;
+    overflow-x: auto !important;
+    padding-bottom: 3px !important;
+  }
+}
+
+/* ─── Responsive Toolbar & Actions ───────────────────────────── */
+@media (max-width: 768px) {
+  .compact-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    padding: 6px !important;
+  }
+  .compact-toolbar-left {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+  }
+  .toolbar-actions {
+    display: flex !important;
+    width: 100% !important;
+    gap: 5px !important;
+    justify-content: stretch !important;
+  }
+  .toolbar-actions button {
+    flex: 1 1 0 !important;
+    padding: 3px 6px !important;
+    font-size: 0.74rem !important;
+    white-space: nowrap !important;
+    justify-content: center !important;
+    text-align: center !important;
   }
 }
 
@@ -552,15 +716,20 @@ tr.discuss-row:hover td,
 
 .compact-table-container {
   overflow: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   flex: 1 !important;
   min-height: 0 !important;
   border: 1px solid var(--border-subtle) !important;
   border-radius: var(--radius-sm) !important;
   background: var(--bg-secondary) !important;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .compact-table {
   width: 100% !important;
+  min-width: 1050px !important;
   border-collapse: collapse !important;
   font-size: var(--excel-cell-font-size, 12.5px) !important;
   line-height: 1.25 !important;

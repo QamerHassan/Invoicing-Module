@@ -42,31 +42,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isLight = theme === 'light';
 
   return (
-    <header style={{
-      flexShrink: 0,
+    <header className="navbar-header" style={{
       background: isLight
         ? 'rgba(240, 242, 248, 0.90)'
         : 'rgba(15, 21, 35, 0.85)',
-      backdropFilter: 'blur(16px)',
-      borderBottom: '1px solid var(--border-subtle)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      padding: '0 0.75rem',
-      overflowX: 'hidden'
     }}>
-      <div style={{
-        maxWidth: '100%',
-        margin: '0 auto',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        height: '44px',
-        gap: '0.5rem',
-        minWidth: 0
-      }}>
+      <div className="navbar-inner">
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
+        <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
           <div style={{
             width: '28px',
             height: '28px',
@@ -91,18 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.3rem',
-          flex: 1,
-          justifyContent: 'center',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          minWidth: 0,
-          padding: '0 0.25rem'
-        }}>
+        <nav className="navbar-nav">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = currentTab === item.id;
@@ -111,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 key={item.id}
                 id={`nav-${item.id}`}
                 onClick={() => setCurrentTab(item.id)}
-                className="nav-btn"
+                className={`nav-btn ${active ? 'active' : ''}`}
                 style={{
                   height: '32px',
                   background: active 
@@ -147,7 +119,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* User & Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
+        <div className="navbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
           {/* Theme Toggle */}
           <button
             id="btn-toggle-theme"

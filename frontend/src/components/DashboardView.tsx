@@ -238,7 +238,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onSelectMonth }) =
       {/* Monthly Trends & Top Vendors Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
         gap: '1.5rem'
       }}>
         {/* Monthly Billing Trends */}
