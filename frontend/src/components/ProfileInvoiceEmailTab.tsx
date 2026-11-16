@@ -602,13 +602,11 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
           {loadingProfiles ? (
             <LoadingIndicator message="Loading processed profiles for email..." fullHeight />
           ) : (
-            <table className="compact-table">
+            <table className="compact-table email-list-table">
               <thead>
                 <tr>
                   <th style={{ textAlign: 'center', width: '40px' }}>#</th>
-                  <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Owner Name</th>
-                  <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
-                  <th style={{ minWidth: '110px', textAlign: 'center' }}>Total Invoices</th>
+                  <th style={{ minWidth: '220px', textAlign: 'left' }}>Profile Owner Name</th>
                   <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
                   <th style={{ minWidth: '140px', textAlign: 'center' }}>Emailed</th>
                   <th style={{ minWidth: '100px', textAlign: 'center' }}>Action</th>
@@ -617,7 +615,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               <tbody>
                 {filteredProfiles.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                       <Mail size={24} style={{ color: 'var(--text-subtle)', margin: '0 auto 8px', display: 'block' }} />
                       {search ? `No processed profiles matching "${search}".` : 'Koi processed invoice nahi.'}
                     </td>
@@ -638,12 +636,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                           {i + 1}
                         </td>
                         <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
-                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
-                          {p.month}
-                        </td>
-                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
-                          {p.rowsCount.toLocaleString()}
-                        </td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
                           {fmtUsd(p.totalInvoice || p.totalCost)}
                         </td>
@@ -1074,6 +1066,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
+            overflowX: 'hidden',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             background: 'var(--bg-surface)'
@@ -1112,23 +1105,19 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                 )}
               </div>
             ) : (
-              <table className="compact-table" style={{ width: '100%' }}>
+              <table className="compact-table compose-table" style={{ width: '100%', minWidth: 0, tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: '30px', textAlign: 'center' }}>#</th>
-                    <th style={{ minWidth: '100px', textAlign: 'left' }}>Recipient</th>
-                    <th style={{ minWidth: '70px', textAlign: 'left' }}>Month</th>
-                    <th style={{ minWidth: '60px', textAlign: 'center' }}>Invoices</th>
-                    <th style={{ minWidth: '90px', textAlign: 'right' }}>Total Invoice</th>
+                    <th style={{ width: '38px', textAlign: 'center' }}>#</th>
+                    <th style={{ textAlign: 'left' }}>Recipient</th>
+                    <th style={{ width: '130px', textAlign: 'right' }}>Total Invoice</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>1</td>
-                    <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{activeOwnerName || '-'}</td>
-                    <td style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{cleanMonth || '-'}</td>
-                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{ownerTotals.count}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.88rem', color: 'var(--excel-actual-color)' }}>
+                    <td style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeOwnerName || '-'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.90rem', color: 'var(--excel-actual-color)', whiteSpace: 'nowrap' }}>
                       ${Math.round(ownerTotals.usd).toLocaleString()}
                     </td>
                   </tr>

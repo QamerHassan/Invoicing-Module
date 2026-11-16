@@ -109,6 +109,8 @@ const AppContent: React.FC = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('activeTab');
+    localStorage.removeItem('profileInvoice_activeExcelTab');
+    localStorage.removeItem('profileInvoicing_activeSubTab');
     setUser(null);
   };
 

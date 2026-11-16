@@ -736,6 +736,12 @@ tr.discuss-row:hover td,
   border-spacing: 0 !important;
 }
 
+.compact-table.compose-table,
+.compact-table.email-list-table {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
 .compact-table th {
   position: sticky !important;
   top: 0;

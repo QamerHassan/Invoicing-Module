@@ -69,7 +69,19 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colKey: string } | null>(null);
   const [hasConfirmedFinalized, setHasConfirmedFinalized] = useState<boolean>(false);
   type ExcelSubTab = 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed';
-  const [activeExcelTab, setActiveExcelTab] = useState<ExcelSubTab>(initialExcelTab || 'sheet');
+  const [activeExcelTab, setActiveExcelTab] = useState<ExcelSubTab>(() => {
+    if (initialExcelTab) return initialExcelTab;
+    const saved = localStorage.getItem('profileInvoice_activeExcelTab');
+    if (saved && ['sheet', 'audit', 'unprocessed', 'discussed', 'email', 'processed'].includes(saved)) {
+      return saved as ExcelSubTab;
+    }
+    return 'sheet';
+  });
+
+  // Persist active sub-tab so page reloads stay on the same sub-tab (e.g. Email)
+  useEffect(() => {
+    localStorage.setItem('profileInvoice_activeExcelTab', activeExcelTab);
+  }, [activeExcelTab]);
 
   // Row selection for To Be Discussed / Process actions
   const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);

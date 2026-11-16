@@ -108,7 +108,15 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
   
   // Data state
   const [rows, setRows] = useState<ProfileInvoiceRowDto[]>([]);
-  const [activeSubTab, setActiveSubTab] = useState<'invoicing' | 'excel'>('excel');
+  const [activeSubTab, setActiveSubTab] = useState<'invoicing' | 'excel'>(() => {
+    const saved = localStorage.getItem('profileInvoicing_activeSubTab');
+    return (saved === 'invoicing' || saved === 'excel') ? saved : 'excel';
+  });
+
+  // Persist activeSubTab so reload stays on the same sub-view
+  useEffect(() => {
+    localStorage.setItem('profileInvoicing_activeSubTab', activeSubTab);
+  }, [activeSubTab]);
   const [initialExcelTab, setInitialExcelTab] = useState<'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed' | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
