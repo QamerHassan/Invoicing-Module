@@ -57,7 +57,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [loading, setLoading] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
+  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'actualCharges' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
   const [editingCell, setEditingCell] = useState<{
     rowIdx: number;
     rowType: 'ProjectHeader' | 'Detail' | 'Standalone';
@@ -78,16 +78,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
     return 'sheet';
   });
-
-  // Switch subtab and ensure returning to Excel Sheet View always resets owner selection
-  const handleTabChange = (newTab: ExcelSubTab) => {
-    if (newTab === 'sheet') {
-      setSelectedOwnerCode('');
-      setData(null);
-      if (onOwnerChange) onOwnerChange('');
-    }
-    setActiveExcelTab(newTab);
-  };
 
   // Persist active sub-tab so page reloads stay on the same sub-tab (e.g. Email)
   useEffect(() => {
@@ -125,6 +115,27 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
   const hasUnsavedChanges = pendingRowUpdates.size > 0 || pendingProjectUpdates.size > 0;
   const unsavedCount = pendingRowUpdates.size + pendingProjectUpdates.size;
+
+  const [pendingNavigationTab, setPendingNavigationTab] = useState<ExcelSubTab | null>(null);
+  const [showUnsavedPrompt, setShowUnsavedPrompt] = useState<boolean>(false);
+
+  const executeTabChange = (newTab: ExcelSubTab) => {
+    if (newTab === 'sheet') {
+      setSelectedOwnerCode('');
+      setData(null);
+      if (onOwnerChange) onOwnerChange('');
+    }
+    setActiveExcelTab(newTab);
+  };
+
+  const handleTabChange = (newTab: ExcelSubTab) => {
+    if (activeExcelTab === 'sheet' && newTab !== 'sheet' && hasUnsavedChanges) {
+      setPendingNavigationTab(newTab);
+      setShowUnsavedPrompt(true);
+      return;
+    }
+    executeTabChange(newTab);
+  };
 
   // Identifies heads that must start UNCHECKED by default (Job Holder, Support, Rizviz Share, Second Resource)
   const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
@@ -217,6 +228,29 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
     return '';
   }, [lockedOwnerName, data?.groupOwnerName, selectedOwnerCode, allOwners, postedOwners, _groupOwners]);
+
+  // Only genuine Profile Group Owners who have UNPROCESSED invoices for this month
+  // so processed owners (like Fawad) do NOT appear in the dropdown
+  const groupOwnersList = useMemo(() => {
+    let list: { prfOwnCode: number; profileName?: string | null; isProfgrpOwner?: string | null }[] = 
+      unprocessedOwners.map(o => ({
+        prfOwnCode: o.prfownCode,
+        profileName: o.profileName,
+        isProfgrpOwner: 'Y'
+      }));
+
+    // If an owner was specifically opened (e.g. navigated from Processed tab View button),
+    // ensure their name displays properly in the trigger
+    if (selectedOwnerCode && !list.some(o => o.prfOwnCode === Number(selectedOwnerCode))) {
+      const selected = allOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode));
+      if (selected) {
+        list = [selected, ...list];
+      } else if (displayOwnerName) {
+        list = [{ prfOwnCode: Number(selectedOwnerCode), profileName: displayOwnerName, isProfgrpOwner: 'Y' }, ...list];
+      }
+    }
+    return list;
+  }, [unprocessedOwners, allOwners, selectedOwnerCode, displayOwnerName]);
 
   // Reset confirmation on month or owner switch
   useEffect(() => {
@@ -535,6 +569,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
       if (field === 'agreedRate') {
         targetRow.agreedRate = isNaN(numVal) ? targetRow.agreedRate : numVal;
+      } else if (field === 'actualCharges') {
+        targetRow.actualCharges = isNaN(numVal) ? targetRow.actualCharges : numVal;
       } else if (field === 'finalUsd') {
         targetRow.finalUsd = isNaN(numVal) ? targetRow.finalUsd : numVal;
       } else if (field === 'otherCharge') {
@@ -555,25 +591,32 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       newRows[targetIdx] = targetRow;
     }
 
-    // Recalculate sums if otherCharge or finalUsd changed
+    // Recalculate sums if otherCharge, actualCharges or finalUsd changed
     let newOtherSum = 0;
+    let newActualSum = 0;
     for (const r of newRows) {
+      if (r.rowType === 'ProjectHeader' || r.rowType === 'Standalone') {
+        if (r.isIncluded !== false && r.actualCharges != null) {
+          newActualSum += r.actualCharges;
+        }
+      }
       if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
       if (r.isIncluded && r.otherCharge != null && r.otherCharge > 0) {
         newOtherSum += r.otherCharge;
       }
     }
-    const newTotalInvoice = (data.actualChargesSum || 0) + newOtherSum;
+    const newTotalInvoice = newActualSum + newOtherSum;
 
     setData({
       ...data,
       rows: newRows,
+      actualChargesSum: Math.round(newActualSum),
       otherChargeSum: Math.round(newOtherSum),
       totalInvoice: Math.round(newTotalInvoice)
     });
 
     // Record pending update for manual save (auto-save removed)
-    if ((rowType === 'ProjectHeader' || field === 'agreedRate') && projectCode) {
+    if ((rowType === 'ProjectHeader' || field === 'agreedRate' || field === 'actualCharges') && projectCode) {
       setPendingProjectUpdates(prev => {
         const next = new Map(prev);
         const req: ProfileInvoiceProjectUpdateRequest = next.get(projectCode) || {
@@ -583,6 +626,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
         if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
+        else if (field === 'actualCharges' && !isNaN(num)) req.agreedRate = num;
         else if (field === 'projectName') req.projectName = value;
         else if (field === 'salaryRate') req.salaryRate = value;
         else if (field === 'projStatus') req.projStatus = value;
@@ -599,7 +643,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         };
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
-        if ((field === 'finalUsd' || field === 'otherCharge') && !isNaN(num)) {
+        if ((field === 'finalUsd' || field === 'otherCharge' || field === 'actualCharges') && !isNaN(num)) {
           req.chargedAmtUsd = num;
           req.totalCost = num;
         } else if (field === 'totalCost' && !isNaN(num)) {
@@ -658,8 +702,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     align: 'left' | 'right' | 'center' = 'right'
   ) => {
     const isEditing = editingCell?.rowIdx === rowIdx && editingCell.field === field;
-    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
-                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
+    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'actualCharges' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
+                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'actualCharges' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
 
     if (!canEdit) {
       if (field === 'totalCost' || field === 'finalUsd') {
@@ -672,7 +716,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       return displayValue;
     }
 
-    const isNumberField = field === 'agreedRate' || field === 'otherCharge';
+    const isNumberField = field === 'agreedRate' || field === 'otherCharge' || field === 'actualCharges';
 
     if (isEditing) {
       return (
@@ -1309,13 +1353,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 </span>
                 <div style={{ flex: '1 1 auto', minWidth: '130px', maxWidth: '300px' }}>
                   <OwnerSearchSelect
-                    owners={
-                      allOwners.length > 0
-                        ? allOwners
-                        : unprocessedOwners.map(o => ({ prfOwnCode: o.prfownCode, profileName: o.profileName }))
-                    }
+                    owners={groupOwnersList}
                     value={selectedOwnerCode}
                     onChange={(val) => {
+                      if (hasUnsavedChanges) {
+                        const ok = window.confirm(`You have ${unsavedCount} unsaved change(s) in this invoice sheet. Please save your changes before switching profile owners.\n\nClick OK to discard changes and switch, or Cancel to stay and click Save.`);
+                        if (!ok) return;
+                        setPendingRowUpdates(new Map());
+                        setPendingProjectUpdates(new Map());
+                      }
                       if (val) {
                         handleNavigateFromUnprocessed(Number(val), cleanMonth);
                       } else {
@@ -2049,7 +2095,16 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           ...getCellHighlight('J')
                         }}
                       >
-                        {row.actualCharges != null ? `$${row.actualCharges.toLocaleString()}` : ''}
+                        {renderEditableCell(
+                          idx,
+                          'actualCharges',
+                          row.actualCharges != null ? `$${row.actualCharges.toLocaleString()}` : '',
+                          row.actualCharges,
+                          row.rowType,
+                          row.cmpProfInvoiceCode,
+                          row.projectCode,
+                          'right'
+                        )}
                       </td>
 
                       {/* K: Other Charge */}
@@ -2250,6 +2305,126 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </table>
         </div>
       )}
+      </div>
+    )}
+
+    {/* Unsaved Changes Confirmation Modal */}
+    {showUnsavedPrompt && (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        backdropFilter: 'blur(3px)'
+      }}>
+        <div style={{
+          background: 'var(--bg-surface)',
+          borderRadius: '10px',
+          border: '1px solid var(--border-medium)',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+          padding: '1.5rem',
+          maxWidth: '480px',
+          width: '90%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.15)',
+              color: '#d97706',
+              borderRadius: '50%',
+              padding: '0.6rem',
+              display: 'flex',
+              flexShrink: 0
+            }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Unsaved Changes Warning
+              </h3>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                You have {unsavedCount} unsaved modification{unsavedCount > 1 ? 's' : ''} in this invoice sheet.
+              </p>
+            </div>
+          </div>
+
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.5', margin: 0 }}>
+            Please save your changes before leaving this tab to avoid losing your work. What would you like to do?
+          </p>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowUnsavedPrompt(false);
+                setPendingNavigationTab(null);
+              }}
+              className="btn-secondary"
+              style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem', fontWeight: 600, borderRadius: '6px' }}
+            >
+              Stay Here
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const dest = pendingNavigationTab;
+                setShowUnsavedPrompt(false);
+                setPendingNavigationTab(null);
+                setPendingRowUpdates(new Map());
+                setPendingProjectUpdates(new Map());
+                if (dest) executeTabChange(dest);
+              }}
+              style={{
+                background: 'transparent',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              Leave Without Saving
+            </button>
+
+            <button
+              type="button"
+              disabled={isSavingChanges}
+              onClick={async () => {
+                await handleManualSave();
+                const dest = pendingNavigationTab;
+                setShowUnsavedPrompt(false);
+                setPendingNavigationTab(null);
+                if (dest) executeTabChange(dest);
+              }}
+              className="btn-primary"
+              style={{
+                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                color: '#ffffff',
+                padding: '0.45rem 0.95rem',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                borderRadius: '6px'
+              }}
+            >
+              <Save size={14} />
+              <span>Save & Continue</span>
+            </button>
+          </div>
+        </div>
       </div>
     )}
   </div>

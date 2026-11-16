@@ -150,21 +150,9 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
 
         {/* ── KPI strip ── */}
         {result && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.7rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.72rem' }}>
             <span style={{ color: 'var(--text-muted)' }}>
-              Unprocessed: <strong style={{ color: 'var(--accent-primary)', fontSize: '0.78rem' }}>{result.totalUnprocessedOwners}</strong>
-            </span>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ color: 'var(--text-muted)' }}>
-              Total Cost: <strong style={{ color: 'var(--excel-cost-color)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{formatMoney(result.totalCostSum ?? 0)}</strong>
-            </span>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ color: 'var(--text-muted)' }}>
-              Pending Rows: <strong style={{ color: 'var(--text-primary)', fontSize: '0.78rem' }}>{result.totalPendingRows}</strong>
-            </span>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ color: 'var(--text-muted)' }}>
-              Pending USD: <strong style={{ color: 'var(--excel-actual-color)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{formatMoney(result.totalPendingUsd)}</strong>
+              Showing: <strong style={{ color: 'var(--accent-primary)', fontSize: '0.80rem' }}>{filteredRows.length}</strong> of <strong>{result.totalUnprocessedOwners}</strong> Unprocessed Owners
             </span>
           </div>
         )}
@@ -210,11 +198,103 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
         ) : (
           <table className="compact-table">
             <thead>
-              <tr>
+              {result && (
+                <tr className="summary-header-row">
+                  {/* Column 1: Profile Owner header banner */}
+                  <th
+                    style={{
+                      borderRight: '1px solid var(--border-subtle)',
+                      borderBottom: '2px solid var(--border-medium)',
+                      padding: '6px 10px',
+                      textAlign: 'left',
+                      verticalAlign: 'middle'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                        UNPROCESSED OWNERS
+                      </span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#4f46e5' }}>
+                        {result.totalUnprocessedOwners} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>owners</span>
+                      </span>
+                    </div>
+                  </th>
+
+                  {/* Column 2: Total Cost banner */}
+                  <th
+                    style={{
+                      borderRight: '1px solid var(--border-subtle)',
+                      borderBottom: '2px solid var(--border-medium)',
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      verticalAlign: 'middle'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
+                        TOTAL COST
+                      </span>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
+                        {formatMoney(result.totalCostSum ?? 0)}
+                      </span>
+                    </div>
+                  </th>
+
+                  {/* Column 3: Pending Rows banner */}
+                  <th
+                    style={{
+                      borderRight: '1px solid var(--border-subtle)',
+                      borderBottom: '2px solid var(--border-medium)',
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      verticalAlign: 'middle'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
+                        PENDING ROWS
+                      </span>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0284c7', fontFamily: 'var(--font-mono)' }}>
+                        {result.totalPendingRows}
+                      </span>
+                    </div>
+                  </th>
+
+                  {/* Column 4: Pending USD banner */}
+                  <th
+                    style={{
+                      borderRight: '1px solid var(--border-subtle)',
+                      borderBottom: '2px solid var(--border-medium)',
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      verticalAlign: 'middle'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
+                        TOTAL PENDING USD
+                      </span>
+                      <span style={{ fontSize: '1.20rem', fontWeight: 900, color: '#dc2626', fontFamily: 'var(--font-mono)' }}>
+                        {formatMoney(result.totalPendingUsd)}
+                      </span>
+                    </div>
+                  </th>
+
+                  {/* Column 5: Action banner */}
+                  <th
+                    style={{
+                      borderBottom: '2px solid var(--border-medium)',
+                      padding: '6px',
+                      verticalAlign: 'middle'
+                    }}
+                  />
+                </tr>
+              )}
+              <tr className="column-header-row">
                 <th style={{ textAlign: 'left', minWidth: '160px' }}>Profile Owner</th>
-                <th style={{ textAlign: 'right', minWidth: '110px' }}>Total Cost</th>
-                <th style={{ textAlign: 'right', minWidth: '95px' }}>Pending Rows</th>
-                <th style={{ textAlign: 'right', minWidth: '110px' }}>Pending USD</th>
+                <th style={{ textAlign: 'right', minWidth: '120px' }}>Total Cost</th>
+                <th style={{ textAlign: 'right', minWidth: '100px' }}>Pending Rows</th>
+                <th style={{ textAlign: 'right', minWidth: '125px' }}>Pending USD</th>
                 <th style={{ textAlign: 'center', width: '80px' }}>Action</th>
               </tr>
             </thead>

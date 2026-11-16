@@ -75,7 +75,7 @@ public class LookupsController : ControllerBase
         if (!_cache.TryGetValue(key, out object? cached))
         {
             cached = await _db.ProfileOwners.AsNoTracking()
-                .Where(p => (p.Active == null || p.Active != "N") && p.ProfileName != null && p.ProfileName != "")
+                .Where(p => (p.Active == null || p.Active != "N") && p.ProfileName != null && p.ProfileName != "" && (p.IsProfgrpOwner == "Y" || p.IsProfgrpOwner == "y"))
                 .OrderBy(p => p.ProfileName)
                 .Select(p => new { p.PrfOwnCode, p.ProfileName, p.ProfileType, p.IsProfgrpOwner })
                 .ToListAsync(ct);

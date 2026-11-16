@@ -30,6 +30,23 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [selectedOwnerCodes, setSelectedOwnerCodes] = useState<Set<number>>(new Set());
 
+  const cleanMonth = (month || '').trim().replace('-', '').toUpperCase();
+
+  const getEmailedOwnersMap = useCallback((): Record<string, { emailedAt: string; toEmail?: string }> => {
+    try {
+      const raw = localStorage.getItem(`profile_invoice_emailed_${cleanMonth}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, [cleanMonth]);
+
+  const [emailedOwners, setEmailedOwners] = useState<Record<string, { emailedAt: string; toEmail?: string }>>({});
+
+  useEffect(() => {
+    setEmailedOwners(getEmailedOwnersMap());
+  }, [getEmailedOwnersMap]);
+
   // Sync with parent props
   useEffect(() => {
     if (initialOwnerCode !== undefined) setOwnerCode(initialOwnerCode);
@@ -52,6 +69,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     try {
+      setEmailedOwners(getEmailedOwnersMap());
       const data = await api.getProcessedProfiles(ownerCode !== '' ? ownerCode : undefined, month);
       setProfiles(Array.isArray(data) ? data : []);
       setSelectedOwnerCodes(new Set()); // Reset selection on reload
@@ -361,19 +379,22 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                 <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                 <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
                 <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
+                <th style={{ minWidth: '110px', textAlign: 'center' }}>Emailed</th>
                 <th style={{ minWidth: '130px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredProfiles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                     {search ? `No processed profiles matching "${search}".` : 'No processed invoices found for this month.'}
                   </td>
                 </tr>
               ) : (
                 filteredProfiles.map((p, i) => {
                   const isChecked = selectedOwnerCodes.has(p.ownerCode);
+                  const isEmailed = Boolean(emailedOwners[String(p.ownerCode)]);
+                  const emailInfo = emailedOwners[String(p.ownerCode)];
                   return (
                     <tr
                       key={p.ownerCode}
@@ -404,6 +425,45 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                       </td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
                         {fmtUsd(p.totalInvoice || p.totalCost)}
+                      </td>
+                      <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                        {isEmailed ? (
+                          <div
+                            title={`Emailed to ${emailInfo?.toEmail || 'recipient'}${emailInfo?.emailedAt ? ` on ${new Date(emailInfo.emailedAt).toLocaleDateString()}` : ''}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              border: '1.5px solid #10b981',
+                              color: '#059669',
+                              borderRadius: '5px',
+                              padding: '2px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 800
+                            }}
+                          >
+                            <CheckCircle size={12} color="#10b981" />
+                            <span>Emailed</span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              background: 'rgba(100, 116, 139, 0.08)',
+                              border: '1px dashed rgba(100, 116, 139, 0.35)',
+                              color: 'var(--text-muted)',
+                              borderRadius: '5px',
+                              padding: '2px 8px',
+                              fontSize: '0.70rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            <span>Not Emailed</span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
@@ -475,6 +535,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#2563eb' }}>
                     {fmtUsd(totalInvoiceSum)}
                   </td>
+                  <td style={{ textAlign: 'center' }}>—</td>
                   <td style={{ textAlign: 'center' }}>—</td>
                 </tr>
               </tfoot>
