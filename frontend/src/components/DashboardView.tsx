@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useMonth } from '../context/MonthContext';
+import { GlobalMonthSelector } from './GlobalMonthSelector';
 import type { DashboardSummaryDto } from '../types';
 import { formatMoney, formatCount, formatRate } from '../utils/format';
 
@@ -20,7 +21,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onSelectMonth }) => {
-  const { selectedMonth, setSelectedMonth, availableMonths, loadingMonths } = useMonth();
+  const { selectedMonth } = useMonth();
   const [data, setData] = useState<DashboardSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,44 +63,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onSelectMonth }) =
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           {/* Global Month Selector */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            background: 'var(--bg-surface)',
-            border: '1.5px solid var(--accent-primary)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '2px 8px',
-            height: '32px',
-            boxShadow: '0 0 10px rgba(99, 102, 241, 0.15)'
-          }}>
-            <Calendar size={15} color="var(--accent-primary)" />
-            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Month:
-            </span>
-            <select
-              id="global-dashboard-month-select"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              disabled={loadingMonths}
-              style={{
-                background: 'transparent',
-                color: 'var(--text-main)',
-                border: 'none',
-                outline: 'none',
-                fontSize: '0.85rem',
-                fontWeight: 800,
-                fontFamily: 'var(--font-mono)',
-                cursor: 'pointer'
-              }}
-            >
-              {availableMonths.map((m) => (
-                <option key={m} value={m} style={{ background: 'var(--bg-surface)', color: 'var(--text-main)' }}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
+          <GlobalMonthSelector />
 
           <button
             className="btn-secondary"

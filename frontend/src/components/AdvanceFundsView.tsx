@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useMonth } from '../context/MonthContext';
+import { GlobalMonthSelector } from './GlobalMonthSelector';
 import type { AdvanceFundDto, CreateAdvanceFundDto, VendorDto } from '../types';
 import { formatMoney, formatCount } from '../utils/format';
 
@@ -18,8 +19,8 @@ interface AdvanceFundsViewProps {
   onMonthChange?: (month: string) => void;
 }
 
-export const AdvanceFundsView: React.FC<AdvanceFundsViewProps> = ({ initialMonth = 'OCT26', onMonthChange }) => {
-  const { selectedMonth: globalMonth, setSelectedMonth: setGlobalMonth } = useMonth();
+export const AdvanceFundsView: React.FC<AdvanceFundsViewProps> = ({ initialMonth = 'OCT26' }) => {
+  const { selectedMonth: globalMonth } = useMonth();
   const [monthYear, setMonthYear] = useState(globalMonth || initialMonth);
   const [funds, setFunds] = useState<AdvanceFundDto[]>([]);
   const [vendors, setVendors] = useState<VendorDto[]>([]);
@@ -70,15 +71,6 @@ export const AdvanceFundsView: React.FC<AdvanceFundsViewProps> = ({ initialMonth
       fetchData(globalMonth);
     }
   }, [globalMonth]);
-
-  const handleMonthChange = (val: string) => {
-    const clean = val.toUpperCase();
-    setMonthYear(clean);
-    if (clean.length >= 5) {
-      setGlobalMonth(clean);
-      onMonthChange?.(clean);
-    }
-  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,24 +146,16 @@ export const AdvanceFundsView: React.FC<AdvanceFundsViewProps> = ({ initialMonth
 
         {/* Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-secondary)', padding: '0.3rem 0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Period:</span>
-            <input 
-              id="input-advance-month"
-              type="text" 
-              value={monthYear} 
-              onChange={(e) => handleMonthChange(e.target.value)}
-              placeholder="e.g. SEP26"
-              style={{ width: '90px', padding: '0.35rem 0.5rem', fontSize: '0.85rem', fontWeight: 700, textAlign: 'center' }}
-            />
-            <button 
-              className="btn-secondary" 
-              onClick={() => fetchData(monthYear)}
-              style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
-            >
-              Load
-            </button>
-          </div>
+          <GlobalMonthSelector />
+          <button 
+            className="btn-secondary" 
+            onClick={() => fetchData(monthYear)}
+            style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', height: '32px' }}
+            title="Reload month data"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Load</span>
+          </button>
 
           <button 
             id="btn-add-advance"

@@ -37,8 +37,28 @@ export const MonthProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const refreshAvailableMonths = useCallback(async () => {
     try {
       setLoadingMonths(true);
-      const months = await api.getBillingMonths();
-      const cleanList = (months || []).map(m => m.trim().replace('-', '').toUpperCase());
+      const [billingRes, invoicedRes] = await Promise.allSettled([
+        api.getBillingMonths(),
+        api.getInvoicedMonths()
+      ]);
+
+      const set = new Set<string>();
+      if (billingRes.status === 'fulfilled' && Array.isArray(billingRes.value)) {
+        billingRes.value.forEach(m => {
+          if (m) set.add(m.trim().replace('-', '').toUpperCase());
+        });
+      }
+      if (invoicedRes.status === 'fulfilled' && Array.isArray(invoicedRes.value)) {
+        invoicedRes.value.forEach(m => {
+          if (m) set.add(m.trim().replace('-', '').toUpperCase());
+        });
+      }
+
+      if (set.size === 0) {
+        ['OCT26', 'SEP26', 'AUG26', 'JUL26', 'JUN26', 'MAY26', 'APR26'].forEach(m => set.add(m));
+      }
+
+      const cleanList = Array.from(set);
       setAvailableMonths(cleanList);
 
       if (cleanList.length > 0) {
@@ -52,8 +72,8 @@ export const MonthProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (saved && cleanList.includes(saved)) {
             return saved;
           }
-          // Default to latest available billing month (first item)
-          const latest = cleanList[0];
+          // Default to latest available billing month (first item) or OCT26
+          const latest = cleanList.includes('OCT26') ? 'OCT26' : cleanList[0];
           try {
             localStorage.setItem(STORAGE_KEY, latest);
           } catch {}
@@ -63,7 +83,7 @@ export const MonthProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err) {
       console.error('Failed to load billing months', err);
       // Fallback sensible defaults if network/db error
-      setAvailableMonths(['OCT26', 'SEP26', 'MAY26', 'APR26']);
+      setAvailableMonths(['OCT26', 'SEP26', 'AUG26', 'MAY26', 'APR26']);
       setSelectedMonthState(prev => prev || 'OCT26');
     } finally {
       setLoadingMonths(false);

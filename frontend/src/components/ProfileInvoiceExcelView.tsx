@@ -10,7 +10,8 @@ import {
   MessageSquare,
   Mail,
   CheckCircle,
-  Archive
+  Archive,
+  Users
 } from 'lucide-react';
 import { api } from '../api/client';
 import { LoadingIndicator } from './LoadingIndicator';
@@ -35,6 +36,7 @@ interface ProfileInvoiceExcelViewProps {
   onOwnerChange?: (ownerCode: number | '') => void;
   initialExcelTab?: 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed';
   lockedOwnerName?: string; // NEW: if set, owner is locked from parent
+  headerRight?: React.ReactNode;
 }
 
 export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = ({
@@ -45,6 +47,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   onOwnerChange,
   initialExcelTab,
   lockedOwnerName = '',  // NEW
+  headerRight,
 }) => {
   const [selectedOwnerCode, setSelectedOwnerCode] = useState<number | ''>(initialOwnerCode);
   const [monthYear, setMonthYear] = useState<string>(initialMonth.replace('-', '').toUpperCase());
@@ -83,10 +86,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [postedOwners, setPostedOwners] = useState<ProfileGroupOwnerDto[]>([]);
   const [allOwners, setAllOwners] = useState<ProfileGroupOwnerDto[]>([]);
 
-  // KAAM 4: Available months from backend
-  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  const [monthsLoading, setMonthsLoading] = useState<boolean>(false);
-
   // Email sub-tab integration for Save & Email
   const [emailSelectedCodes, setEmailSelectedCodes] = useState<number[] | null>(null);
   const [emailSelectedRows, setEmailSelectedRows] = useState<any[] | null>(null);
@@ -106,22 +105,54 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     return s.includes('job holder') || s.includes('support') || s.includes('rizviz share') || s.includes('second resource');
   };
 
-  // Normalizes Excel view data: Job Holder, Support Provider, Rizviz Share, and Second Resource start unchecked by default
+  // Normalizes Excel view data:
+  // - Default unchecked heads (Job Holder, Support Provider, Rizviz Share, Second Resource)
+  //   start unchecked by default unless explicitly marked included in DB or has otherCharge > 0.
+  // - All other heads start checked by default unless explicitly marked included = false in DB.
+  // - For ANY service head: when included, otherCharge holds the row amount; when unchecked, null.
+  // - Recalculates otherChargeSum and totalInvoice strictly from rows.
+  // - Total Cost / Total USD (totalCostSum / finalUsdSum) remains strictly fixed and unchanged.
   const normalizeExcelViewData = (d: ProfileInvoiceExcelViewResult | null): ProfileInvoiceExcelViewResult | null => {
     if (!d || !d.rows) return d;
+    const normalizedRows = d.rows.map(r => {
+      if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') {
+        return r;
+      }
+
+      const headAmount = (r.finalUsd != null && r.finalUsd > 0) 
+        ? r.finalUsd 
+        : (r.totalCost || r.chargedAmtUsd || 0);
+
+      let isInc = false;
+      if (isDefaultUncheckedHead(r.serviceHead)) {
+        isInc = r.isIncluded === true || (r.otherCharge != null && r.otherCharge > 0);
+      } else {
+        isInc = r.isIncluded !== false;
+      }
+
+      return {
+        ...r,
+        isIncluded: isInc,
+        otherCharge: isInc ? (r.otherCharge != null && r.otherCharge > 0 ? r.otherCharge : headAmount) : null
+      };
+    });
+
+    let newOtherSum = 0;
+    for (const r of normalizedRows) {
+      if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
+      if (r.isIncluded && r.otherCharge != null && r.otherCharge > 0) {
+        newOtherSum += r.otherCharge;
+      }
+    }
+
+    const actualSum = d.actualChargesSum || 0;
+
     return {
       ...d,
-      rows: d.rows.map(r => {
-        if (isDefaultUncheckedHead(r.serviceHead)) {
-          const hasOther = (r.otherCharge != null && r.otherCharge > 0) || r.isIncluded === true;
-          return {
-            ...r,
-            isIncluded: hasOther,
-            otherCharge: hasOther ? (r.otherCharge ?? r.finalUsd ?? null) : null
-          };
-        }
-        return r;
-      })
+      rows: normalizedRows,
+      otherChargeSum: Math.round(newOtherSum),
+      totalInvoice: Math.round(actualSum + newOtherSum)
+      // totalCostSum and finalUsdSum remain completely unchanged
     };
   };
 
@@ -173,35 +204,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
     return false;
   };
-
-  // KAAM 4: Fetch invoiced months for selected owner or all
-  const fetchMonths = useCallback(async (ownerCode?: number | '') => {
-    setMonthsLoading(true);
-    try {
-      const code = typeof ownerCode === 'number' && ownerCode > 0 ? ownerCode : undefined;
-      const list = await api.getInvoicedMonths(code);
-      setAvailableMonths(list);
-      if (list.length > 0) {
-        setMonthYear(prev => {
-          const cur = prev.trim().replace('-', '').toUpperCase();
-          if (cur && list.includes(cur)) return cur;
-          const initClean = initialMonth ? initialMonth.trim().replace('-', '').toUpperCase() : '';
-          const nextMonth = (initClean && list.includes(initClean)) ? initClean : list[list.length - 1];
-          if (onMonthChange) onMonthChange(nextMonth);
-          return nextMonth;
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load invoiced months', err);
-      setAvailableMonths([]);
-    } finally {
-      setMonthsLoading(false);
-    }
-  }, [onMonthChange]);
-
-  useEffect(() => {
-    fetchMonths(selectedOwnerCode);
-  }, [selectedOwnerCode, fetchMonths]);
 
   // Sync prop changes from parent
   useEffect(() => {
@@ -377,9 +379,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         });
       }
       setPostedOwners(owners);
-
-      const monthsList = await api.getInvoicedMonths(targetOwnerCode);
-      setAvailableMonths(monthsList);
     } catch (err: any) {
       console.error('Failed to generate and open excel view from unprocessed', err);
       try {
@@ -411,11 +410,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     const newRows = [...data.rows];
     let targetIdx = rowIdx !== undefined && rowIdx >= 0 ? rowIdx : newRows.findIndex(r => r.cmpProfInvoiceCode === code);
     if (targetIdx >= 0) {
-      const isDefUnchecked = isDefaultUncheckedHead(newRows[targetIdx].serviceHead);
-      const targetRow = { ...newRows[targetIdx], isIncluded: checked };
-      if (isDefUnchecked) {
-        targetRow.otherCharge = checked ? (targetRow.finalUsd || targetRow.totalCost || 0) : null;
-      }
+      const targetRow = { ...newRows[targetIdx] };
+      const headAmount = (targetRow.finalUsd != null && targetRow.finalUsd > 0)
+        ? targetRow.finalUsd
+        : (targetRow.totalCost || targetRow.chargedAmtUsd || 0);
+
+      targetRow.isIncluded = checked;
+      targetRow.otherCharge = checked ? headAmount : null;
+      // Important: targetRow.totalCost and targetRow.finalUsd are strictly preserved!
       newRows[targetIdx] = targetRow;
     }
 
@@ -423,17 +425,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     let newOtherSum = 0;
     for (const r of newRows) {
       if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
-      const isDefUnchecked = isDefaultUncheckedHead(r.serviceHead);
-      const inc = isDefUnchecked
-        ? Boolean(r.isIncluded && r.otherCharge != null && r.otherCharge > 0)
-        : (r.isIncluded !== false);
-
-      if (inc) {
-        if (r.otherCharge != null && r.otherCharge > 0) {
-          newOtherSum += r.otherCharge;
-        } else if (isDefUnchecked && r.finalUsd != null && r.finalUsd > 0) {
-          newOtherSum += r.finalUsd;
-        }
+      if (r.isIncluded && r.otherCharge != null && r.otherCharge > 0) {
+        newOtherSum += r.otherCharge;
       }
     }
 
@@ -444,6 +437,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       rows: newRows,
       otherChargeSum: Math.round(newOtherSum),
       totalInvoice: Math.round(newTotalInvoice)
+      // data.totalCostSum and data.finalUsdSum are strictly preserved!
     });
 
     // 3. Background server save if code is a real invoice record or virtual negative project code
@@ -549,10 +543,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
         const res = await api.updateProfileInvoiceProject(projectCode, req);
         if (res.excelView) {
-          setData(res.excelView);
+          setData(normalizeExcelViewData(res.excelView));
         } else {
           const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-          setData(fresh);
+          setData(normalizeExcelViewData(fresh));
         }
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2500);
@@ -591,10 +585,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
         const res = await api.updateProfileInvoiceRow(code, req);
         if (res.excelView) {
-          setData(res.excelView);
+          setData(normalizeExcelViewData(res.excelView));
         } else {
           const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-          setData(fresh);
+          setData(normalizeExcelViewData(fresh));
         }
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2500);
@@ -1021,91 +1015,176 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      {/* Sub-tabs inside Excel View */}
-      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          onClick={() => setActiveExcelTab('sheet')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'sheet' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'sheet' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'sheet' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <FileSpreadsheet size={13} />
-          Excel Sheet View
-        </button>
+      {/* Header Row: Tabs on Left, Month Selector + Profile Invoicing Button on Right */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.75rem',
+        borderBottom: '1px solid var(--border-subtle)',
+        paddingBottom: '4px',
+        minHeight: '34px',
+        flexWrap: 'nowrap'
+      }}>
+        {/* Left Side: All 6 tabs in one line */}
+        <div style={{
+          display: 'flex',
+          gap: '5px',
+          alignItems: 'center',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          minWidth: 0
+        }}>
+          <button
+            onClick={() => setActiveExcelTab('sheet')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'sheet' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'sheet' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'sheet' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'sheet' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'sheet' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <FileSpreadsheet size={14} />
+            Excel Sheet View
+          </button>
 
-        <button
-          onClick={() => setActiveExcelTab('unprocessed')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'unprocessed' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'unprocessed' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'unprocessed' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <Clock size={13} />
-          Unprocessed
-        </button>
+          <button
+            onClick={() => setActiveExcelTab('unprocessed')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'unprocessed' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'unprocessed' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'unprocessed' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'unprocessed' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'unprocessed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <Clock size={14} />
+            Unprocessed
+          </button>
 
-        <button
-          onClick={() => setActiveExcelTab('discussed')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'discussed' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'discussed' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'discussed' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <MessageSquare size={13} />
-          To Be Discussed
-        </button>
+          <button
+            onClick={() => setActiveExcelTab('discussed')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'discussed' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'discussed' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'discussed' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'discussed' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'discussed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <MessageSquare size={14} />
+            To Be Discussed
+          </button>
 
-        <button
-          onClick={() => setActiveExcelTab('processed')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'processed' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'processed' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'processed' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <Archive size={13} />
-          Processed
-        </button>
+          <button
+            onClick={() => setActiveExcelTab('processed')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'processed' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'processed' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'processed' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'processed' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'processed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <Archive size={14} />
+            Processed
+          </button>
 
-        <button
-          onClick={() => setActiveExcelTab('email')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'email' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'email' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'email' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <Mail size={13} />
-          Email
-        </button>
+          <button
+            onClick={() => setActiveExcelTab('email')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'email' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'email' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'email' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'email' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'email' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <Mail size={14} />
+            Email
+          </button>
 
-        <button
-          onClick={() => setActiveExcelTab('audit')}
-          className="compact-tab-btn"
-          style={{
-            border: activeExcelTab === 'audit' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-            background: activeExcelTab === 'audit' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-            color: activeExcelTab === 'audit' ? '#fff' : 'var(--text-muted)'
-          }}
-        >
-          <History size={13} />
-          Change Summary
-        </button>
+          <button
+            onClick={() => setActiveExcelTab('audit')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'audit' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'audit' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'audit' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'audit' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'audit' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <History size={14} />
+            Change Summary
+          </button>
+        </div>
 
-        {/* Divider */}
-        {activeExcelTab === 'sheet' && (
-          <>
-            <div style={{ width: '1px', height: '20px', background: 'var(--border-subtle)', margin: '0 2px' }} />
-          </>
+        {/* Right Side: Month dropdown + Profile Invoicing button */}
+        {headerRight && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {headerRight}
+          </div>
         )}
       </div>
 
@@ -1179,86 +1258,71 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               {actionMsg.text}
             </div>
           )}
-          <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                Profile Owner:
-              </span>
-              <div style={{ minWidth: '220px' }}>
-                <select
-                  value={selectedOwnerCode ? String(selectedOwnerCode) : ''}
-                  onChange={(e) => {
-                    const code = Number(e.target.value);
-                    if (code) {
-                      handleNavigateFromUnprocessed(code, cleanMonth);
-                    }
-                  }}
-                  disabled={unprocessedLoading}
-                  style={{
-                    width: '100%',
-                    height: '24px',
-                    padding: '1px 6px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1.5px solid #6366f1',
-                    background: 'var(--bg-surface)',
-                    color: 'var(--text-main)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="">
-                    {unprocessedLoading
-                      ? 'Loading owners...'
-                      : unprocessedOwners.length === 0
-                      ? 'No pending owners'
-                      : 'Select Profile Owner...'}
-                  </option>
-                  {unprocessedOwners.map((owner) => (
-                    <option key={owner.prfownCode} value={owner.prfownCode}>
-                      {owner.profileName}
+          <div className="compact-toolbar" style={{ minHeight: '34px', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(79, 70, 229, 0.08) 100%)',
+                border: '1.5px solid #6366f1',
+                borderRadius: '7px',
+                padding: '2px 8px',
+                height: '32px',
+                boxShadow: '0 1px 4px rgba(99, 102, 241, 0.15)'
+              }}>
+                <Users size={15} color="#6366f1" style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                  Profile Owner:
+                </span>
+                <div style={{ minWidth: '240px' }}>
+                  <select
+                    value={selectedOwnerCode ? String(selectedOwnerCode) : ''}
+                    onChange={(e) => {
+                      const code = Number(e.target.value);
+                      if (code) {
+                        handleNavigateFromUnprocessed(code, cleanMonth);
+                      } else {
+                        setSelectedOwnerCode('');
+                        if (onOwnerChange) onOwnerChange('');
+                        setData(null);
+                      }
+                    }}
+                    disabled={unprocessedLoading}
+                    style={{
+                      width: '100%',
+                      height: '26px',
+                      padding: '1px 8px',
+                      fontSize: '0.84rem',
+                      fontWeight: 700,
+                      borderRadius: '5px',
+                      border: '1px solid rgba(99, 102, 241, 0.4)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-main)',
+                      cursor: 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="">
+                      {unprocessedLoading
+                        ? 'Loading owners...'
+                        : unprocessedOwners.length === 0
+                        ? 'No pending owners'
+                        : 'Select Profile Owner...'}
                     </option>
-                  ))}
-                  {selectedOwnerCode && !unprocessedOwners.some(o => o.prfownCode === Number(selectedOwnerCode)) && displayOwnerName && (
-                    <option value={selectedOwnerCode}>
-                      {displayOwnerName}
-                    </option>
-                  )}
-                </select>
+                    {unprocessedOwners.map((owner) => (
+                      <option key={owner.prfownCode} value={owner.prfownCode}>
+                        {owner.profileName}
+                      </option>
+                    ))}
+                    {selectedOwnerCode && !unprocessedOwners.some(o => o.prfownCode === Number(selectedOwnerCode)) && displayOwnerName && (
+                      <option value={selectedOwnerCode}>
+                        {displayOwnerName}
+                      </option>
+                    )}
+                  </select>
+                </div>
               </div>
-
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '0.2rem' }}>
-                Month:
-              </span>
-              <select
-                value={cleanMonth}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setMonthYear(val);
-                  if (onMonthChange) onMonthChange(val);
-                }}
-                disabled={monthsLoading}
-                style={{
-                  background: 'var(--bg-surface)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '1px 5px',
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-mono)',
-                  height: '24px',
-                  minWidth: '85px',
-                  boxSizing: 'border-box'
-                }}
-              >
-                {availableMonths.length === 0 ? (
-                  <option value="">No invoiced months</option>
-                ) : (
-                  availableMonths.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))
-                )}
-              </select>
 
               <button
                 onClick={handleLoad}
@@ -1267,14 +1331,15 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '1px 7px',
-                  height: '24px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600
+                  gap: '0.35rem',
+                  padding: '2px 9px',
+                  height: '32px',
+                  fontSize: '0.80rem',
+                  fontWeight: 700,
+                  borderRadius: '6px'
                 }}
               >
-                <RefreshCw size={12} className={loading ? 'spin' : ''} />
+                <RefreshCw size={13} className={loading ? 'spin' : ''} />
                 {loading ? 'Loading...' : 'Refresh Excel View'}
               </button>
 
@@ -1326,7 +1391,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
               <button
                 onClick={handleDownload}
                 disabled={loading || downloading || !data || data.rows.length === 0}
@@ -1334,16 +1399,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '1px 8px',
-                  height: '24px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
+                  gap: '0.35rem',
+                  padding: '2px 10px',
+                  height: '30px',
+                  fontSize: '0.80rem',
+                  fontWeight: 700,
+                  borderRadius: '6px',
                   background: '#059669',
                   borderColor: '#059669'
                 }}
               >
-                <Download size={12} className={downloading ? 'spin' : ''} />
+                <Download size={13} className={downloading ? 'spin' : ''} />
                 {downloading ? 'Downloading...' : 'Download XLSX'}
               </button>
 
@@ -1352,18 +1418,18 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 onClick={handleSaveAndEmail}
                 disabled={!someSelected || processingSelected || !data}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.3rem',
-                  padding: '1px 8px', height: '24px', fontSize: '0.75rem', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: '0.35rem',
+                  padding: '2px 10px', height: '30px', fontSize: '0.80rem', fontWeight: 700,
                   background: someSelected ? '#6366f1' : 'var(--bg-secondary)',
                   color: someSelected ? '#fff' : 'var(--text-muted)',
                   border: `1px solid ${someSelected ? '#6366f1' : 'var(--border-subtle)'}`,
-                  borderRadius: 'var(--radius-sm)',
+                  borderRadius: '6px',
                   cursor: someSelected ? 'pointer' : 'not-allowed',
                   opacity: someSelected ? 1 : 0.5
                 }}
                 title={someSelected ? `Send ${selectedCodesCount} selected invoices by email` : 'Select rows first'}
               >
-                <Mail size={12} />
+                <Mail size={13} />
                 Save & Email
               </button>
 
@@ -1372,18 +1438,18 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 onClick={handleSaveAndProcess}
                 disabled={!someSelected || processingSelected || !data}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.3rem',
-                  padding: '1px 8px', height: '24px', fontSize: '0.75rem', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: '0.35rem',
+                  padding: '2px 10px', height: '30px', fontSize: '0.80rem', fontWeight: 700,
                   background: someSelected ? '#2563eb' : 'var(--bg-secondary)',
                   color: someSelected ? '#fff' : 'var(--text-muted)',
                   border: `1px solid ${someSelected ? '#2563eb' : 'var(--border-subtle)'}`,
-                  borderRadius: 'var(--radius-sm)',
+                  borderRadius: '6px',
                   cursor: someSelected ? 'pointer' : 'not-allowed',
                   opacity: someSelected ? 1 : 0.5
                 }}
                 title={someSelected ? `Process ${selectedCodesCount} selected invoices` : 'Select rows first'}
               >
-                <CheckCircle size={12} className={processingSelected ? 'spin' : ''} />
+                <CheckCircle size={13} className={processingSelected ? 'spin' : ''} />
                 {processingSelected ? 'Processing...' : 'Save & Process'}
               </button>
             </div>
@@ -1407,93 +1473,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           )}
 
           {/* Excel Sheet Table Container with full viewport height & sticky header */}
-          {/* ── Batch Selection Toolbar ──────────────────────────────────── */}
-          {data && data.rows.length > 0 && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '3px 6px',
-              background: someSelected ? 'rgba(59, 130, 246, 0.06)' : 'var(--bg-secondary)',
-              border: `1px solid ${someSelected ? 'rgba(59, 130, 246, 0.25)' : 'var(--border-subtle)'}`,
-              borderRadius: 'var(--radius-sm)',
-              flexWrap: 'wrap',
-              transition: 'background 0.2s, border-color 0.2s'
-            }}>
-              {/* Select All / Deselect All buttons */}
-              <button
-                onClick={handleSelectAll}
-                disabled={allSelected || allSelectableIndices.size === 0}
-                style={{
-                  padding: '2px 10px',
-                  height: '24px',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  background: allSelected ? 'rgba(37, 99, 235, 0.12)' : '#2563eb',
-                  color: allSelected ? '#2563eb' : '#fff',
-                  border: '1px solid #2563eb',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: (allSelected || allSelectableIndices.size === 0) ? 'not-allowed' : 'pointer',
-                  opacity: (allSelected || allSelectableIndices.size === 0) ? 0.6 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem'
-                }}
-              >
-                ✓ Select All ({allSelectableIndices.size})
-              </button>
-
-              {someSelected && (
-                <button
-                  onClick={handleDeselectAll}
-                  style={{
-                    padding: '2px 10px',
-                    height: '24px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: 'transparent',
-                    color: 'var(--text-muted)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
-                  }}
-                >
-                  ✕ Deselect All
-                </button>
-              )}
-
-              {/* Selected count badge */}
-              {someSelected && (
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  color: '#2563eb',
-                  background: 'rgba(37, 99, 235, 0.08)',
-                  border: '1px solid rgba(37, 99, 235, 0.25)',
-                  borderRadius: '10px',
-                  padding: '1px 8px',
-                  fontFamily: 'var(--font-mono)'
-                }}>
-                  Selected: {selectedCodesCount} of {selectableRows.reduce((acc, r) => acc + r.codes.length, 0)}
-                </span>
-              )}
-
-              {/* Not-selected hint */}
-              {!someSelected && allSelectableIndices.size > 0 && (
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-subtle)', marginLeft: '2px' }}>
-                  Check/uncheck rows to select for email or processing →
-                </span>
-              )}
-              {allSelectableIndices.size === 0 && (
-                <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600 }}>
-                  ✓ All invoices for this owner are already processed
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Process result message */}
           {processMsg && (
@@ -1512,13 +1491,35 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             </div>
           )}
 
-          <div className="compact-table-container">
-            <table className="compact-table">
-              <thead>
-                {/* ── Summary Totals Row (Directly Above Respective Columns) ── */}
-                {data && (
-                  <tr className="summary-header-row">
-                    {/* colSpan=6: Checkbox, Profile Owner (A), Proj (B), Stack (C), Project Name (D), Service Head (E) */}
+          {/* Placeholder: show when no owner selected and no data loading */}
+          {activeExcelTab === 'sheet' && !selectedOwnerCode && !loading && !data ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              gap: '1rem',
+              color: 'var(--text-muted)',
+              padding: '6rem 2rem',
+              textAlign: 'center'
+            }}>
+              <Users size={56} style={{ opacity: 0.25, color: 'var(--accent-primary)' }} />
+              <p style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                Please select a Profile Owner to view the report.
+              </p>
+              <p style={{ fontSize: '0.85rem', margin: 0, opacity: 0.7 }}>
+                Choose an owner from the Profile Owner dropdown above to load their invoice sheet.
+              </p>
+            </div>
+          ) : (
+            <div className="compact-table-container">
+              <table className="compact-table">
+                <thead>
+                  {/* ── Summary Totals Row (Directly Above Respective Columns) ── */}
+                  {data && (
+                    <tr className="summary-header-row">
+                      {/* colSpan=6: Checkbox, Profile Owner (A), Proj (B), Stack (C), Project Name (D), Service Head (E) */}
                     <th
                       colSpan={6}
                       style={{
@@ -1534,39 +1535,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                        {/* Left: Owner name + month + rows count */}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
                           <span style={{ fontSize: '0.94rem', fontWeight: 900, color: 'var(--text-main)' }}>
                             {data.groupOwnerName}
                           </span>
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                             ({data.monthYear})
                           </span>
-                        </div>
-
-                        {/* TOTAL INVOICE prominent display */}
-                        <div 
-                          title="Calculated (Total Actual + Total Other)"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'baseline',
-                            gap: '0.35rem',
-                            background: 'rgba(37, 99, 235, 0.08)',
-                            border: '1.5px solid rgba(37, 99, 235, 0.25)',
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            cursor: 'default'
-                          }}
-                        >
-                          <span style={{ fontSize: '0.70rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            TOTAL INVOICE:
+                          <span style={{ fontSize: '0.70rem', color: 'var(--text-subtle)', fontWeight: 600 }}>
+                            {data.totalSavedRows} rows ({data.totalProjectBlocks} proj)
                           </span>
-                          <span style={{ fontSize: '1.12rem', fontWeight: 900, color: '#2563eb', fontFamily: 'var(--font-mono)' }}>
-                            ${data.totalInvoice.toLocaleString()}
-                          </span>
-                        </div>
-
-                        <div style={{ fontSize: '0.70rem', color: 'var(--text-subtle)', fontWeight: 600 }}>
-                          {data.totalSavedRows} rows ({data.totalProjectBlocks} proj)
                         </div>
                       </div>
                     </th>
@@ -1599,35 +1578,25 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                     <th
                       style={{
                         background: 'var(--bg-secondary)',
-                        borderRight: '1px solid var(--border-subtle)',
                         borderBottom: '2px solid var(--border-medium)',
                         padding: '4px 8px',
-                        textAlign: 'center',
-                        verticalAlign: 'middle',
                         position: 'sticky',
                         top: 0,
                         zIndex: 12
                       }}
-                    >
-                      <span style={{ fontSize: '0.70rem', color: 'var(--text-subtle)' }}>—</span>
-                    </th>
+                    />
 
                     {/* Column 9: Directly above Hrs/Dys (I) */}
                     <th
                       style={{
                         background: 'var(--bg-secondary)',
-                        borderRight: '1px solid var(--border-subtle)',
                         borderBottom: '2px solid var(--border-medium)',
                         padding: '4px',
-                        textAlign: 'center',
-                        verticalAlign: 'middle',
                         position: 'sticky',
                         top: 0,
                         zIndex: 12
                       }}
-                    >
-                      <span style={{ fontSize: '0.70rem', color: 'var(--text-subtle)' }}>—</span>
-                    </th>
+                    />
 
                     {/* Column 10: Directly above Actual (J) */}
                     <th
@@ -1691,11 +1660,36 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         zIndex: 12
                       }}
                     >
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ width: '10px', height: '10px', background: 'var(--bg-foreign-row)', border: '1.5px solid var(--border-foreign, #2563eb)', borderRadius: '2px', display: 'inline-block' }} />
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--border-foreign, #2563eb)' }}>
-                          Foreign (Branch 5)
-                        </span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                        {/* Foreign legend */}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ width: '10px', height: '10px', background: 'var(--bg-foreign-row)', border: '1.5px solid var(--border-foreign, #2563eb)', borderRadius: '2px', display: 'inline-block' }} />
+                          <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--border-foreign, #2563eb)' }}>
+                            Foreign (Branch 5)
+                          </span>
+                        </div>
+
+                        {/* TOTAL INVOICE badge */}
+                        <div
+                          title="Calculated (Total Actual + Total Other)"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'baseline',
+                            gap: '0.35rem',
+                            background: 'rgba(37, 99, 235, 0.10)',
+                            border: '1.5px solid rgba(37, 99, 235, 0.35)',
+                            padding: '2px 10px',
+                            borderRadius: '4px',
+                            cursor: 'default'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                            TOTAL INVOICE:
+                          </span>
+                          <span style={{ fontSize: '1.12rem', fontWeight: 900, color: '#2563eb', fontFamily: 'var(--font-mono)' }}>
+                            ${data.totalInvoice.toLocaleString()}
+                          </span>
+                        </div>
                       </div>
                     </th>
                   </tr>
@@ -2041,9 +2035,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         {renderEditableCell(
                           idx, 
                           'otherCharge', 
-                          isDefaultUncheckedHead(row.serviceHead)
-                            ? (row.isIncluded && row.otherCharge != null && row.otherCharge > 0 ? `$${row.otherCharge.toLocaleString()}` : '')
-                            : (row.isIncluded !== false && row.otherCharge != null ? `$${row.otherCharge.toLocaleString()}` : ''), 
+                          row.isIncluded && row.otherCharge != null && row.otherCharge > 0 
+                            ? `$${row.otherCharge.toLocaleString()}` 
+                            : '', 
                           row.otherCharge, 
                           row.rowType, 
                           row.cmpProfInvoiceCode, 
@@ -2063,11 +2057,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                             <input
                               type="checkbox"
-                              checked={
-                                isDefaultUncheckedHead(row.serviceHead)
-                                  ? Boolean(row.isIncluded && ((row.otherCharge != null && row.otherCharge > 0) || (row.finalUsd != null && row.finalUsd > 0)))
-                                  : (row.isIncluded !== false)
-                              }
+                              checked={Boolean(row.isIncluded)}
                               disabled={togglingCode === (row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)))}
                               onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)), e.target.checked, idx)}
                               title="Include in totals - click to toggle & save"
@@ -2234,8 +2224,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             </tbody>
           </table>
         </div>
-        </div>
       )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 };

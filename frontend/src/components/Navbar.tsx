@@ -10,12 +10,10 @@ import {
   Building2,
   Sun,
   Moon,
-  Users,
-  Calendar
+  Users
 } from 'lucide-react';
 import type { UserInfo } from '../types';
 import { useTheme } from '../context/ThemeContext';
-import { useMonth } from '../context/MonthContext';
 
 interface NavbarProps {
   currentTab: string;
@@ -31,7 +29,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout
 }) => {
   const { theme, toggleTheme } = useTheme();
-  const { selectedMonth } = useMonth();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -90,7 +87,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = currentTab === item.id;
@@ -100,21 +97,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id={`nav-${item.id}`}
                 onClick={() => setCurrentTab(item.id)}
                 style={{
-                  height: '28px',
-                  background: active ? 'var(--accent-primary-light)' : 'transparent',
-                  color: active ? '#818cf8' : 'var(--text-muted)',
-                  border: active ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid transparent',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '0.15rem 0.6rem',
-                  fontSize: '0.78rem',
-                  fontWeight: active ? 700 : 500,
+                  height: '32px',
+                  background: active 
+                    ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' 
+                    : isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.06)',
+                  color: active 
+                    ? '#ffffff' 
+                    : isLight ? '#0f172a' : '#f8fafc',
+                  border: active 
+                    ? '1.5px solid #3730a3' 
+                    : isLight ? '1.5px solid rgba(100, 116, 139, 0.4)' : '1.5px solid rgba(255, 255, 255, 0.18)',
+                  borderRadius: '6px',
+                  padding: '0.2rem 0.75rem',
+                  fontSize: '0.86rem',
+                  fontWeight: active ? 800 : 700,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.35rem',
+                  gap: '0.4rem',
+                  boxShadow: active 
+                    ? '0 2px 8px rgba(79, 70, 229, 0.4)' 
+                    : '0 1px 2px rgba(0, 0, 0, 0.05)',
+                  cursor: 'pointer',
                   transition: 'all var(--transition-fast)'
                 }}
               >
-                <Icon size={14} />
+                <Icon size={15} />
                 <span>{item.label}</span>
               </button>
             );
@@ -123,31 +130,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* User & Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {/* Active Global Month Indicator */}
-          {selectedMonth && (
-            <div
-              title="Globally Active Billing Month"
-              style={{
-                height: '28px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.3rem',
-                background: isLight ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.18)',
-                border: '1px solid rgba(99, 102, 241, 0.35)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '0 0.55rem',
-                color: isLight ? '#4f46e5' : '#a5b4fc',
-                fontSize: '0.75rem',
-                fontWeight: 800,
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: '0.02em'
-              }}
-            >
-              <Calendar size={13} />
-              <span>{selectedMonth}</span>
-            </div>
-          )}
-
           {/* Theme Toggle */}
           <button
             id="btn-toggle-theme"

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useMonth } from '../context/MonthContext';
+import { GlobalMonthSelector } from './GlobalMonthSelector';
 import type { CompanyInvoiceDto, ProfileOwnerDto, ProfileProjectDto } from '../types';
 import { formatMoney, formatCount, formatRate } from '../utils/format';
 
@@ -64,9 +65,6 @@ function formatServiceHead(codeOrName?: string | null): string {
   return SERVICE_HEAD_MAP[trimmed] || trimmed;
 }
 
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const YEARS = ['25', '26', '27', '28'];
-
 interface CompanyInvoicingViewProps {
   initialMonth?: string;
   onNavigateToUnprocessed?: (month: string) => void;
@@ -75,42 +73,16 @@ interface CompanyInvoicingViewProps {
 
 export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
   initialMonth = 'OCT26',
-  onNavigateToUnprocessed,
-  onMonthChange
+  onNavigateToUnprocessed
 }) => {
-  const { selectedMonth: globalMonth, setSelectedMonth: setGlobalMonth } = useMonth();
-  const effectiveMonth = globalMonth || initialMonth;
-
-  // Parse month e.g. "OCT26" -> month = "OCT", year = "26"
-  const parsedMonth = effectiveMonth.length >= 5 ? effectiveMonth.substring(0, 3).toUpperCase() : 'OCT';
-  const parsedYear = effectiveMonth.length >= 5 ? effectiveMonth.substring(3).toUpperCase() : '26';
-
-  const [selectedMonth, setSelectedMonth] = useState(parsedMonth);
-  const [selectedYear, setSelectedYear] = useState(parsedYear);
-  const monthYear = `${selectedMonth}${selectedYear}`;
-
-  const handleMonthSelect = (m: string) => {
-    setSelectedMonth(m);
-    const newMY = `${m}${selectedYear}`;
-    setGlobalMonth(newMY);
-    onMonthChange?.(newMY);
-  };
-
-  const handleYearSelect = (y: string) => {
-    setSelectedYear(y);
-    const newMY = `${selectedMonth}${y}`;
-    setGlobalMonth(newMY);
-    onMonthChange?.(newMY);
-  };
+  const { selectedMonth: globalMonth } = useMonth();
+  const monthYear = (globalMonth || initialMonth || 'OCT26').trim().replace('-', '').toUpperCase();
 
   // Sync with globalMonth from context
   useEffect(() => {
-    if (globalMonth && globalMonth.length >= 5) {
-      const m = globalMonth.substring(0, 3).toUpperCase();
-      const y = globalMonth.substring(3).toUpperCase();
-      setSelectedMonth(m);
-      setSelectedYear(y);
-      fetchInvoices(`${m}${y}`);
+    if (globalMonth) {
+      const clean = globalMonth.trim().replace('-', '').toUpperCase();
+      fetchInvoices(clean);
     }
   }, [globalMonth]);
 
@@ -350,35 +322,9 @@ export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
       <div className="panel-card" style={{ padding: '1rem 1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           
-          {/* Month / Year selection */}
+          {/* Global Month Selection */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <label htmlFor="select-invoice-month" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Month:</label>
-              <select
-                id="select-invoice-month"
-                value={selectedMonth}
-                onChange={(e) => handleMonthSelect(e.target.value)}
-                style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', fontWeight: 700, borderRadius: '4px' }}
-              >
-                {MONTHS.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <label htmlFor="select-invoice-year" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Year:</label>
-              <select
-                id="select-invoice-year"
-                value={selectedYear}
-                onChange={(e) => handleYearSelect(e.target.value)}
-                style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', fontWeight: 700, borderRadius: '4px' }}
-              >
-                {YEARS.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
+            <GlobalMonthSelector />
 
             <button
               className="btn-secondary"

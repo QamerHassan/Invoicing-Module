@@ -7,7 +7,12 @@ import {
   Check, 
   Save, 
   Play, 
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock,
+  MessageSquare,
+  Archive,
+  Mail,
+  History
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { 
@@ -19,6 +24,8 @@ import { formatMoney } from '../utils/format';
 import { ProfileInvoiceExcelView } from './ProfileInvoiceExcelView';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 import { LoadingIndicator } from './LoadingIndicator';
+import { useMonth } from '../context/MonthContext';
+import { GlobalMonthSelector } from './GlobalMonthSelector';
 
 const SERVICE_HEAD_MAP: Record<string, string> = {
   'JH': 'Job Holder',
@@ -82,36 +89,16 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
     const owner = groupOwners.find(o => o.prfOwnCode === Number(selectedOwnerCode));
     return owner?.profileName ?? '';
   }, [groupOwners, selectedOwnerCode]);
-  const [monthYear, setMonthYear] = useState<string>(initialMonth.replace('-', '').toUpperCase());
-  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  const [monthsLoading, setMonthsLoading] = useState<boolean>(false);
 
-  // Fetch invoiced months from backend (owner-filtered if selected, latest first)
+  const { selectedMonth, availableMonths } = useMonth();
+  const effectiveMonth = (selectedMonth || initialMonth || 'OCT26').replace('-', '').toUpperCase();
+  const [monthYear, setMonthYear] = useState<string>(effectiveMonth);
+
   useEffect(() => {
-    const loadMonths = async () => {
-      setMonthsLoading(true);
-      try {
-        const owner = typeof selectedOwnerCode === 'number' && selectedOwnerCode > 0 ? selectedOwnerCode : undefined;
-        const list = await api.getInvoicedMonths(owner);
-        setAvailableMonths(list);
-        if (list.length > 0) {
-          setMonthYear(prev => {
-            const cur = prev.trim().replace('-', '').toUpperCase();
-            if (cur && list.includes(cur)) return cur;
-            const initClean = initialMonth ? initialMonth.trim().replace('-', '').toUpperCase() : '';
-            if (initClean && list.includes(initClean)) return initClean;
-            return list[list.length - 1];
-          });
-        }
-      } catch (err) {
-        console.error('Failed to load invoiced months', err);
-        setAvailableMonths([]);
-      } finally {
-        setMonthsLoading(false);
-      }
-    };
-    loadMonths();
-  }, [selectedOwnerCode, initialMonth]);
+    if (selectedMonth) {
+      setMonthYear(selectedMonth.replace('-', '').toUpperCase());
+    }
+  }, [selectedMonth]);
 
   useEffect(() => {
     if (initialMonth) {
@@ -121,7 +108,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
   
   // Data state
   const [rows, setRows] = useState<ProfileInvoiceRowDto[]>([]);
-  const [activeSubTab, setActiveSubTab] = useState<'invoicing' | 'excel'>('invoicing');
+  const [activeSubTab, setActiveSubTab] = useState<'invoicing' | 'excel'>('excel');
   const [initialExcelTab, setInitialExcelTab] = useState<'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed' | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -197,9 +184,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       try {
         const owners = await api.getProfileGroupOwners();
         setGroupOwners(owners);
-        if (owners.length > 0 && !selectedOwnerCode) {
-          setSelectedOwnerCode(owners[0].prfOwnCode);
-        }
       } catch (err: any) {
         console.error('Failed to load profile group owners', err);
         setError('Failed to load profile group owners.');
@@ -467,90 +451,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       animation: 'fadeIn 0.25s ease-in-out'
     }}>
       
-      {/* Header & Sub-tab Bar */}
-      <div style={{
-        display: 'flex',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '0.5rem',
-        borderBottom: '1px solid var(--border-subtle)',
-        paddingBottom: '3px',
-        flexWrap: 'wrap',
-        minHeight: '28px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <h1 style={{
-            fontSize: '0.95rem',
-            fontWeight: 800,
-            color: 'var(--text-main)',
-            margin: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.35rem'
-          }}>
-            <Users size={16} color="var(--accent-primary)" />
-            Profile Invoicing
-          </h1>
-
-          {/* Month Dropdown in Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: '0.4rem' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>Month:</span>
-            <select
-              value={monthYear.trim().replace('-', '').toUpperCase()}
-              onChange={(e) => {
-                const val = e.target.value;
-                setMonthYear(val);
-                onMonthChange?.(val);
-              }}
-              disabled={monthsLoading}
-              style={{
-                background: 'var(--bg-surface)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '1px 5px',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                height: '24px',
-                minWidth: '85px',
-                boxSizing: 'border-box'
-              }}
-            >
-              {availableMonths.length === 0 ? (
-                <option value="">No invoiced months</option>
-              ) : (
-                availableMonths.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))
-              )}
-            </select>
-          </div>
-        </div>
-
-        {/* Sub-tabs */}
-        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {activeSubTab === 'excel' && (
-            <button
-              onClick={() => setActiveSubTab('invoicing')}
-              className="compact-tab-btn"
-              style={{
-                border: '1px solid var(--accent-primary)',
-                background: 'var(--accent-primary)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                cursor: 'pointer'
-              }}
-            >
-              <Users size={13} />
-              Profile Invoicing
-            </button>
-          )}
-        </div>
-      </div>
-
       {activeSubTab === 'excel' ? (
         <ProfileInvoiceExcelView
           groupOwners={groupOwners}
@@ -563,9 +463,175 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
           onOwnerChange={setSelectedOwnerCode}
           initialExcelTab={initialExcelTab}
           lockedOwnerName={selectedOwnerName}
+          headerRight={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+              <GlobalMonthSelector />
+              <button
+                id="btn-subtab-profile-invoicing"
+                onClick={() => setActiveSubTab('invoicing')}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--accent-primary)',
+                  background: 'var(--accent-primary)',
+                  color: '#fff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  cursor: 'pointer',
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  borderRadius: '7px',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+                title="Switch to Standard Invoicing View"
+              >
+                <Users size={14} />
+                Profile Invoicing
+              </button>
+            </div>
+          }
         />
       ) : (
         <>
+          {/* Header Row: Tabs on Left, Month Selector + Profile Invoicing Button on Right */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            borderBottom: '1px solid var(--border-subtle)',
+            paddingBottom: '4px',
+            minHeight: '34px',
+            flexWrap: 'nowrap'
+          }}>
+            {/* Left Side: All 6 tabs in one line */}
+            <div style={{
+              display: 'flex',
+              gap: '4px',
+              alignItems: 'center',
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
+              minWidth: 0
+            }}>
+              <button
+                onClick={() => { setInitialExcelTab('sheet'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <FileSpreadsheet size={13} />
+                Excel Sheet View
+              </button>
+
+              <button
+                onClick={() => { setInitialExcelTab('unprocessed'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Clock size={13} />
+                Unprocessed
+              </button>
+
+              <button
+                onClick={() => { setInitialExcelTab('discussed'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <MessageSquare size={13} />
+                To Be Discussed
+              </button>
+
+              <button
+                onClick={() => { setInitialExcelTab('processed'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Archive size={13} />
+                Processed
+              </button>
+
+              <button
+                onClick={() => { setInitialExcelTab('email'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Mail size={13} />
+                Email
+              </button>
+
+              <button
+                onClick={() => { setInitialExcelTab('audit'); setActiveSubTab('excel'); }}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <History size={13} />
+                Change Summary
+              </button>
+            </div>
+
+            {/* Right Side: Month dropdown + Profile Invoicing button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+              <GlobalMonthSelector />
+              <button
+                id="btn-subtab-profile-invoicing-active"
+                onClick={() => setActiveSubTab('excel')}
+                className="compact-tab-btn"
+                style={{
+                  border: '1px solid #4f46e5',
+                  background: '#4f46e5',
+                  color: '#fff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  cursor: 'pointer',
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  borderRadius: '7px',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 0 10px rgba(99, 102, 241, 0.3)'
+                }}
+                title="Currently in Profile Invoicing — Click to return to Excel Sheet View"
+              >
+                <Users size={14} />
+                Profile Invoicing
+              </button>
+            </div>
+          </div>
+
           {/* Primary Action & Filter Bar */}
           <div className="panel-card" style={{
             padding: '1.25rem',
@@ -603,7 +669,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
                     setMonthYear(val);
                     onMonthChange?.(val);
                   }}
-                  disabled={monthsLoading}
                   style={{
                     background: 'var(--bg-surface)',
                     color: 'var(--text-main)',

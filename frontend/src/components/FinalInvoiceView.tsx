@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Download, 
   Printer, 
@@ -12,59 +12,22 @@ import {
   Layers, 
   DollarSign, 
   CreditCard, 
-  Calendar,
   X
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useMonth } from '../context/MonthContext';
+import { GlobalMonthSelector } from './GlobalMonthSelector';
 import type { FinalInvoiceDto, FinalInvoiceCalculationResult, AdvanceFundDto } from '../types';
 import { formatMoney } from '../utils/format';
-
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const YEARS = ['26', '25', '24'];
 
 interface FinalInvoiceViewProps {
   initialMonth?: string;
   onMonthChange?: (month: string) => void;
 }
 
-export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({ initialMonth = 'OCT26', onMonthChange }) => {
-  const { selectedMonth: globalMonth, setSelectedMonth: setGlobalMonth } = useMonth();
-  const effectiveMonth = globalMonth || initialMonth;
-
-  // Parse initialMonth into month and year
-  const initM = effectiveMonth.length >= 5 ? effectiveMonth.substring(0, 3).toUpperCase() : 'OCT';
-  const initY = effectiveMonth.length >= 5 ? effectiveMonth.substring(3).toUpperCase() : '26';
-
-  const [selectedMonth, setSelectedMonth] = useState(initM);
-  const [selectedYear, setSelectedYear] = useState(initY);
-  const monthYear = useMemo(() => `${selectedMonth}${selectedYear}`, [selectedMonth, selectedYear]);
-
-  // Sync with globalMonth from context
-  useEffect(() => {
-    if (globalMonth && globalMonth.length >= 5) {
-      const m = globalMonth.substring(0, 3).toUpperCase();
-      const y = globalMonth.substring(3).toUpperCase();
-      if (m !== selectedMonth || y !== selectedYear) {
-        setSelectedMonth(m);
-        setSelectedYear(y);
-      }
-    }
-  }, [globalMonth]);
-
-  const handleMonthSelect = (m: string) => {
-    setSelectedMonth(m);
-    const newMY = `${m}${selectedYear}`;
-    setGlobalMonth(newMY);
-    onMonthChange?.(newMY);
-  };
-
-  const handleYearSelect = (y: string) => {
-    setSelectedYear(y);
-    const newMY = `${selectedMonth}${y}`;
-    setGlobalMonth(newMY);
-    onMonthChange?.(newMY);
-  };
+export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({ initialMonth = 'OCT26' }) => {
+  const { selectedMonth: globalMonth } = useMonth();
+  const monthYear = (globalMonth || initialMonth || 'OCT26').trim().replace('-', '').toUpperCase();
 
   const [calcResult, setCalcResult] = useState<FinalInvoiceCalculationResult | null>(null);
   const [savedInvoice, setSavedInvoice] = useState<FinalInvoiceDto | null>(null);
@@ -183,28 +146,14 @@ export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({ initialMonth
 
         {/* Action Buttons Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
-          {/* Month / Year Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-secondary)', padding: '0.3rem 0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-            <Calendar size={15} color="var(--accent-primary)" />
-            <select
-              value={selectedMonth}
-              onChange={(e) => handleMonthSelect(e.target.value)}
-              style={{ padding: '0.3rem 0.5rem', fontSize: '0.825rem', fontWeight: 700, borderRadius: 'var(--radius-sm)' }}
-            >
-              {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => handleYearSelect(e.target.value)}
-              style={{ padding: '0.3rem 0.5rem', fontSize: '0.825rem', fontWeight: 700, borderRadius: 'var(--radius-sm)' }}
-            >
-              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+          {/* Global Month Selection */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <GlobalMonthSelector />
             <button
               className="btn-secondary"
               onClick={() => loadMonthData(monthYear)}
               disabled={loading}
-              style={{ padding: '0.3rem 0.65rem', fontSize: '0.8rem' }}
+              style={{ padding: '0.3rem 0.65rem', fontSize: '0.8rem', height: '32px' }}
               title="Reload live month data"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
