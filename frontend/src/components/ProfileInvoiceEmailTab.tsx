@@ -270,7 +270,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     setToEmail(cachedEmail);
 
     const monthFormatted = formatMonthDisplay(cleanMonth);
-    const invoiceTotal = activeOwnerProfile ? (activeOwnerProfile.totalCost || activeOwnerProfile.totalInvoice) : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const invoiceTotal = activeOwnerProfile
+      ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
+      : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
 
     setSubject(`Profile Invoice – ${activeOwnerName} – ${monthFormatted}`);
     setBody(
@@ -287,7 +289,10 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile]);
 
   const ownerTotals = useMemo(() => {
-    const usd = activeOwnerProfile ? (activeOwnerProfile.totalCost || activeOwnerProfile.totalInvoice) : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    // totalInvoice = TOTAL ACTUAL + TOTAL OTHER (matches Excel Sheet banner "TOTAL INVOICE")
+    const usd = activeOwnerProfile
+      ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
+      : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
     const count = activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length;
     return { count, usd };
   }, [activeOwnerProfile, displayRows]);
