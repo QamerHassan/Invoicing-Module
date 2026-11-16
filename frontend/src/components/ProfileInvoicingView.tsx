@@ -451,6 +451,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       display: 'flex',
       flexDirection: 'column',
       gap: '4px',
+      overflow: 'hidden',
       animation: 'fadeIn 0.25s ease-in-out'
     }}>
       

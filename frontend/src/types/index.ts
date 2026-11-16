@@ -338,6 +338,8 @@ export interface SendProfileInvoiceEmailRequest {
   month: string;
   replyToEmail?: string;
   toEmail: string;
+  ccEmail?: string;
+  bccEmail?: string;
   subject: string;
   body: string;
   // Multi-sender optional fields

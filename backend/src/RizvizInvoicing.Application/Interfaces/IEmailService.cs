@@ -20,5 +20,7 @@ public interface IEmailService
         string? replyToEmail = null,
         string? senderEmail = null,
         string? appPassword = null,
+        string? ccEmail = null,
+        string? bccEmail = null,
         CancellationToken ct = default);
 }

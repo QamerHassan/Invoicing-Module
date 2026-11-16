@@ -1098,9 +1098,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   };
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
       {/* Header Row: Tabs on Left, Month Selector + Profile Invoicing Button on Right */}
-      <div className="profile-subtabs-header">
+      <div className="profile-subtabs-header" style={{ flexShrink: 0 }}>
         {/* Left Side: All 6 tabs in one line */}
         <div className="profile-subtabs-list">
           <button
@@ -1314,10 +1314,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           }}
         />
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
           {/* Action notification banner */}
           {actionMsg && (
             <div style={{
+              flexShrink: 0,
               padding: '0.25rem 0.6rem',
               borderRadius: 'var(--radius-sm)',
               fontSize: '0.75rem',
@@ -1332,7 +1333,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               {actionMsg.text}
             </div>
           )}
-          <div className="compact-toolbar" style={{ minHeight: '34px', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <div className="compact-toolbar" style={{ flexShrink: 0, minHeight: '34px', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
             <div className="compact-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
               <div style={{
                 display: 'inline-flex',
@@ -1729,29 +1730,31 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.65rem',
+                            gap: '0.5rem',
                             background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(79, 70, 229, 0.12) 100%)',
                             border: '2px solid #2563eb',
-                            padding: '5px 18px',
-                            borderRadius: '8px',
-                            boxShadow: '0 2px 12px rgba(37, 99, 235, 0.25)',
+                            padding: '3px 14px',
+                            borderRadius: '7px',
+                            boxShadow: '0 2px 10px rgba(37, 99, 235, 0.25)',
                             cursor: 'default',
-                            minWidth: '230px',
+                            minWidth: '210px',
+                            height: '38px',
+                            boxSizing: 'border-box',
                             justifyContent: 'space-between'
                           }}
                         >
                           <span style={{
-                            fontSize: '0.80rem',
+                            fontSize: '0.78rem',
                             fontWeight: 900,
                             color: 'var(--text-main)',
                             textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
+                            letterSpacing: '0.05em',
                             whiteSpace: 'nowrap'
                           }}>
                             TOTAL INVOICE:
                           </span>
                           <span style={{
-                            fontSize: '1.38rem',
+                            fontSize: '1.25rem',
                             fontWeight: 900,
                             color: '#2563eb',
                             fontFamily: 'var(--font-mono)',

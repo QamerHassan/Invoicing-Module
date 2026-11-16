@@ -376,6 +376,8 @@ public class ProfileInvoicesController : ControllerBase
                 request.ReplyToEmail,
                 activeSender,
                 activePassword,
+                request.CcEmail,
+                request.BccEmail,
                 ct);
 
             // ── Save settings ONLY after successful send when RememberSettings=true ──

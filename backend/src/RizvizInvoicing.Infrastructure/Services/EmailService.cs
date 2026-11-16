@@ -50,6 +50,8 @@ public class EmailService : IEmailService
         string? replyToEmail = null,
         string? senderEmail = null,
         string? appPassword = null,
+        string? ccEmail = null,
+        string? bccEmail = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(toEmail))
@@ -109,7 +111,75 @@ public class EmailService : IEmailService
 
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(activeFromName, activeEmail));
-        message.To.Add(MailboxAddress.Parse(trimmedTo));
+
+        // Support multiple recipient addresses separated by comma, semicolon, or whitespace
+        var recipients = trimmedTo.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (recipients.Length == 0)
+        {
+            throw new ArgumentException("At least one valid recipient email is required.", nameof(toEmail));
+        }
+
+        foreach (var recipient in recipients)
+        {
+            var cleanRecip = recipient.Trim();
+            if (!string.IsNullOrWhiteSpace(cleanRecip))
+            {
+                try
+                {
+                    message.To.Add(MailboxAddress.Parse(cleanRecip));
+                }
+                catch (Exception parseEx)
+                {
+                    _logger.LogWarning("Failed to parse recipient address '{Recip}': {Msg}", cleanRecip, parseEx.Message);
+                    // Also try basic fallback if Name isn't included
+                    message.To.Add(new MailboxAddress(cleanRecip, cleanRecip));
+                }
+            }
+        }
+
+        // Optional CC recipients
+        if (!string.IsNullOrWhiteSpace(ccEmail))
+        {
+            var ccList = ccEmail.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var cc in ccList)
+            {
+                var cleanCc = cc.Trim();
+                if (!string.IsNullOrWhiteSpace(cleanCc))
+                {
+                    try
+                    {
+                        message.Cc.Add(MailboxAddress.Parse(cleanCc));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Failed to parse CC address '{Cc}': {Msg}", cleanCc, ex.Message);
+                        message.Cc.Add(new MailboxAddress(cleanCc, cleanCc));
+                    }
+                }
+            }
+        }
+
+        // Optional BCC recipients
+        if (!string.IsNullOrWhiteSpace(bccEmail))
+        {
+            var bccList = bccEmail.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var bcc in bccList)
+            {
+                var cleanBcc = bcc.Trim();
+                if (!string.IsNullOrWhiteSpace(cleanBcc))
+                {
+                    try
+                    {
+                        message.Bcc.Add(MailboxAddress.Parse(cleanBcc));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Failed to parse BCC address '{Bcc}': {Msg}", cleanBcc, ex.Message);
+                        message.Bcc.Add(new MailboxAddress(cleanBcc, cleanBcc));
+                    }
+                }
+            }
+        }
 
         // Optional Reply-To
         if (!string.IsNullOrWhiteSpace(replyToEmail) && replyToEmail.Contains('@'))

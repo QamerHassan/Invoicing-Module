@@ -65,10 +65,10 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
   }, [result?.rows, search]);
 
   return (
-    <div style={{ flex: 1, minHeight: 0, padding: '2px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+    <div style={{ flex: 1, minHeight: 0, padding: '2px', display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
 
       {/* ── Compact Filter Toolbar ── */}
-      <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
+      <div className="compact-toolbar" style={{ flexShrink: 0, minHeight: '28px', padding: '2px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>Month:</span>
           <input
@@ -160,6 +160,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
 
       {/* ── Info banner ── */}
       <div style={{
+        flexShrink: 0,
         padding: '0.3rem 0.6rem',
         background: 'rgba(99, 102, 241, 0.08)',
         border: '1px solid rgba(99, 102, 241, 0.2)',

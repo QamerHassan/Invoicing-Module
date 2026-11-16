@@ -256,6 +256,8 @@ public class SendProfileInvoiceEmailRequest
     public string Month { get; set; } = string.Empty;
     public string? ReplyToEmail { get; set; }
     public string ToEmail { get; set; } = string.Empty;
+    public string? CcEmail { get; set; }
+    public string? BccEmail { get; set; }
     public string Subject { get; set; } = string.Empty;
     public string Body { get; set; } = string.Empty;
 
