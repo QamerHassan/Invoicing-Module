@@ -78,6 +78,16 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     return 'sheet';
   });
 
+  // Switch subtab and ensure returning to Excel Sheet View always resets owner selection
+  const handleTabChange = (newTab: ExcelSubTab) => {
+    if (newTab === 'sheet') {
+      setSelectedOwnerCode('');
+      setData(null);
+      if (onOwnerChange) onOwnerChange('');
+    }
+    setActiveExcelTab(newTab);
+  };
+
   // Persist active sub-tab so page reloads stay on the same sub-tab (e.g. Email)
   useEffect(() => {
     localStorage.setItem('profileInvoice_activeExcelTab', activeExcelTab);
@@ -1014,7 +1024,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         {/* Left Side: All 6 tabs in one line */}
         <div className="profile-subtabs-list">
           <button
-            onClick={() => setActiveExcelTab('sheet')}
+            onClick={() => handleTabChange('sheet')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1039,7 +1049,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </button>
 
           <button
-            onClick={() => setActiveExcelTab('unprocessed')}
+            onClick={() => handleTabChange('unprocessed')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1064,7 +1074,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </button>
 
           <button
-            onClick={() => setActiveExcelTab('discussed')}
+            onClick={() => handleTabChange('discussed')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1089,7 +1099,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </button>
 
           <button
-            onClick={() => setActiveExcelTab('processed')}
+            onClick={() => handleTabChange('processed')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1114,7 +1124,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </button>
 
           <button
-            onClick={() => setActiveExcelTab('email')}
+            onClick={() => handleTabChange('email')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1139,7 +1149,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           </button>
 
           <button
-            onClick={() => setActiveExcelTab('audit')}
+            onClick={() => handleTabChange('audit')}
             className="compact-tab-btn"
             style={{
               height: '32px',
@@ -1214,9 +1224,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             setEmailSelectedCodes(null);
             setEmailSelectedRows(null);
           }}
-          onOwnerChange={(newOwner) => {
-            setSelectedOwnerCode(newOwner);
-            if (onOwnerChange) onOwnerChange(newOwner);
+          onOwnerChange={() => {
+            // Keep email tab selection local; do not override excel sheet view owner
           }}
           onMonthChange={(newMonth) => {
             setMonthYear(newMonth);

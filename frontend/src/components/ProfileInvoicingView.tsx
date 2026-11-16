@@ -462,7 +462,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       {activeSubTab === 'excel' ? (
         <ProfileInvoiceExcelView
           groupOwners={groupOwners}
-          initialOwnerCode={selectedOwnerCode}
+          initialOwnerCode=""
           initialMonth={monthYear}
           onMonthChange={(m) => {
             setMonthYear(m);
@@ -470,7 +470,6 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
           }}
           onOwnerChange={setSelectedOwnerCode}
           initialExcelTab={initialExcelTab}
-          lockedOwnerName={selectedOwnerName}
           headerRight={
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
               <GlobalMonthSelector />
@@ -509,7 +508,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
             {/* Left Side: All 6 tabs in one line */}
             <div className="profile-subtabs-list">
               <button
-                onClick={() => { setInitialExcelTab('sheet'); setActiveSubTab('excel'); }}
+                onClick={() => { setInitialExcelTab('sheet'); setActiveSubTab('excel'); setSelectedOwnerCode(''); }}
                 className="compact-tab-btn"
                 style={{
                   border: '1px solid var(--border-subtle)',
