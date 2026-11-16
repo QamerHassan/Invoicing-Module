@@ -3114,8 +3114,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         foreach (var oCode in ownerCodes)
         {
-            // Use full (non-processedOnly) view so TotalInvoice matches the Excel Sheet View banner exactly
-            var view = await GetExcelViewAsync(oCode, cleanMonth, ct: ct);
+            // Use processedOnly=true so TotalInvoice matches only processed rows (same as Excel Sheet View after Save & Process)
+            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: true, specificOwnerCode: null, ct: ct);
 
             // Count and sum directly from DB for accuracy (not filtered by excludeToBeDiscussed)
             int totalInvoiceCount = 0;
