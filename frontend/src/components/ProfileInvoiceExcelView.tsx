@@ -658,10 +658,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   ) => {
     const isEditing = editingCell?.rowIdx === rowIdx && editingCell.field === field;
     const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
-                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'finalUsd' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
+                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
 
     if (!canEdit) {
-      if (field === 'totalCost') {
+      if (field === 'totalCost' || field === 'finalUsd') {
         return (
           <span title="Calculated" style={{ cursor: 'default' }}>
             {displayValue}
@@ -671,7 +671,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       return displayValue;
     }
 
-    const isNumberField = field === 'finalUsd' || field === 'agreedRate' || field === 'otherCharge';
+    const isNumberField = field === 'agreedRate' || field === 'otherCharge';
 
     if (isEditing) {
       return (
@@ -1990,34 +1990,34 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         }}
                       >
                         {isHeader && (
-                          <span style={{ fontWeight: 900, fontSize: '16px', color: 'var(--excel-cost-color)' }}>
-                            {renderEditableCell(idx, 'totalCost', row.totalCost != null ? `$${row.totalCost.toLocaleString()}` : '-', row.totalCost, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                          <span style={{ fontWeight: 900, fontSize: '16px', color: 'var(--excel-cost-color)', cursor: 'default' }}>
+                            {row.totalCost != null ? `$${row.totalCost.toLocaleString()}` : '-'}
                           </span>
                         )}
 
                         {isDetail && (
-                          <span style={{ fontWeight: 600, fontSize: '13px', color: isDiscuss ? 'var(--text-discuss-row)' : 'var(--text-main)' }}>
-                            {renderEditableCell(idx, 'finalUsd', row.finalUsd != null ? `$${row.finalUsd.toLocaleString()}` : '-', row.finalUsd, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                          <span style={{ fontWeight: 600, fontSize: '13px', color: isDiscuss ? 'var(--text-discuss-row)' : 'var(--text-main)', cursor: 'default' }}>
+                            {row.finalUsd != null ? `$${row.finalUsd.toLocaleString()}` : '-'}
                           </span>
                         )}
 
                         {isStandalone && (() => {
                           if (row.totalCost != null && row.finalUsd != null && row.totalCost !== row.finalUsd) {
                             return (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end', cursor: 'default' }}>
                                 <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--excel-cost-color)' }}>
-                                  {renderEditableCell(idx, 'totalCost', `$${row.totalCost.toLocaleString()}`, row.totalCost, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                                  ${row.totalCost.toLocaleString()}
                                 </span>
                                 <span style={{ fontWeight: 600, fontSize: '13px', color: isDiscuss ? 'var(--text-discuss-row)' : 'var(--text-main)' }}>
-                                  {renderEditableCell(idx, 'finalUsd', `$${row.finalUsd.toLocaleString()}`, row.finalUsd, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                                  ${row.finalUsd.toLocaleString()}
                                 </span>
                               </div>
                             );
                           }
                           const val = row.finalUsd ?? row.totalCost;
                           return (
-                            <span style={{ fontWeight: 700, fontSize: '14px', color: isDiscuss ? 'var(--text-discuss-row)' : 'var(--text-main)' }}>
-                              {renderEditableCell(idx, 'finalUsd', val != null ? `$${val.toLocaleString()}` : '-', val, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
+                            <span style={{ fontWeight: 700, fontSize: '14px', color: isDiscuss ? 'var(--text-discuss-row)' : 'var(--text-main)', cursor: 'default' }}>
+                              {val != null ? `$${val.toLocaleString()}` : '-'}
                             </span>
                           );
                         })()}
