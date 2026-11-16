@@ -21,6 +21,7 @@ import { ProfileInvoiceUnprocessedTab } from './ProfileInvoiceUnprocessedTab';
 import { ProfileInvoiceToBeDiscussedTab } from './ProfileInvoiceToBeDiscussedTab';
 import { ProfileInvoiceEmailTab } from './ProfileInvoiceEmailTab';
 import { ProfileInvoiceProcessedTab } from './ProfileInvoiceProcessedTab';
+import { OwnerSearchSelect } from './OwnerSearchSelect';
 import type { 
   ProfileGroupOwnerDto, 
   ProfileInvoiceExcelViewResult,
@@ -1307,51 +1308,28 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   Profile Owner:
                 </span>
                 <div style={{ flex: '1 1 auto', minWidth: '130px', maxWidth: '300px' }}>
-                  <select
-                    value={selectedOwnerCode ? String(selectedOwnerCode) : ''}
-                    onChange={(e) => {
-                      const code = Number(e.target.value);
-                      if (code) {
-                        handleNavigateFromUnprocessed(code, cleanMonth);
+                  <OwnerSearchSelect
+                    owners={
+                      allOwners.length > 0
+                        ? allOwners
+                        : unprocessedOwners.map(o => ({ prfOwnCode: o.prfownCode, profileName: o.profileName }))
+                    }
+                    value={selectedOwnerCode}
+                    onChange={(val) => {
+                      if (val) {
+                        handleNavigateFromUnprocessed(Number(val), cleanMonth);
                       } else {
                         setSelectedOwnerCode('');
                         if (onOwnerChange) onOwnerChange('');
                         setData(null);
                       }
                     }}
+                    placeholder={unprocessedLoading ? 'Loading owners...' : 'Select Profile Owner...'}
+                    allowAll={false}
+                    compact={true}
                     disabled={unprocessedLoading}
-                    style={{
-                      width: '100%',
-                      height: '26px',
-                      padding: '1px 8px',
-                      fontSize: '0.84rem',
-                      fontWeight: 700,
-                      borderRadius: '5px',
-                      border: '1px solid rgba(99, 102, 241, 0.4)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-main)',
-                      cursor: 'pointer',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="">
-                      {unprocessedLoading
-                        ? 'Loading owners...'
-                        : unprocessedOwners.length === 0
-                        ? 'No pending owners'
-                        : 'Select Profile Owner...'}
-                    </option>
-                    {unprocessedOwners.map((owner) => (
-                      <option key={owner.prfownCode} value={owner.prfownCode}>
-                        {owner.profileName}
-                      </option>
-                    ))}
-                    {selectedOwnerCode && !unprocessedOwners.some(o => o.prfownCode === Number(selectedOwnerCode)) && displayOwnerName && (
-                      <option value={selectedOwnerCode}>
-                        {displayOwnerName}
-                      </option>
-                    )}
-                  </select>
+                    width="100%"
+                  />
                 </div>
               </div>
 
