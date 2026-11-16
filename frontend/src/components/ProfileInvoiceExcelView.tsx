@@ -429,6 +429,41 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [onMonthChange, onOwnerChange]);
 
+  // Navigate from Processed tab to Excel Sheet View to view this owner's processed sheet
+  const handleViewProcessedInExcel = useCallback(async (ownerCode: number, month: string) => {
+    const cleaned = month.trim().replace('-', '').toUpperCase();
+    skipAutoLoadRef.current = true;
+    setActiveExcelTab('sheet');
+    setMonthYear(cleaned);
+    if (onMonthChange) onMonthChange(cleaned);
+
+    setSelectedOwnerCode(ownerCode);
+    if (onOwnerChange) onOwnerChange(ownerCode);
+
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.getProfileInvoiceExcelView(ownerCode, cleaned);
+      setData(normalizeExcelViewData(result));
+      setSelectedRowIndices(computeInitialSelectedIndices(result));
+      setProcessMsg(null);
+
+      const owners = await api.getPostedGroupOwners(cleaned);
+      if (result.groupOwnerName && !owners.some(o => o.prfOwnCode === ownerCode)) {
+        owners.push({
+          prfOwnCode: ownerCode,
+          profileName: result.groupOwnerName
+        });
+      }
+      setPostedOwners(owners);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load Excel sheet for processed profile.');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [onMonthChange, onOwnerChange]);
+
   const handleToggleIncluded = (code: number, checked: boolean, rowIdx?: number) => {
     if (!checkConfirmFinalized() || !data) return;
 
@@ -1209,6 +1244,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             setUnprocessedRefreshKey(k => k + 1);
             fetchUnprocessedOwners();
           }}
+          onViewInExcel={handleViewProcessedInExcel}
         />
       ) : activeExcelTab === 'email' ? (
         <ProfileInvoiceEmailTab

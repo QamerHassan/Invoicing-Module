@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X } from 'lucide-react';
+import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedProfileDto } from '../types';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
@@ -10,13 +10,15 @@ interface Props {
   initialOwnerCode?: number | '';
   initialMonth?: string;
   onRefreshUnprocessed?: () => void;
+  onViewInExcel?: (ownerCode: number, month: string) => void;
 }
 
 export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   groupOwners,
   initialOwnerCode,
   initialMonth,
-  onRefreshUnprocessed
+  onRefreshUnprocessed,
+  onViewInExcel
 }) => {
   const [month, setMonth] = useState(initialMonth || 'OCT26');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
@@ -359,7 +361,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                 <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                 <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
                 <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
-                <th style={{ minWidth: '80px', textAlign: 'center' }}>Action</th>
+                <th style={{ minWidth: '130px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -404,29 +406,54 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                         {fmtUsd(p.totalInvoice || p.totalCost)}
                       </td>
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => handleSingleUnprocess(p)}
-                          disabled={actionLoading}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.2rem',
-                            padding: '1px 7px',
-                            height: '20px',
-                            fontSize: '0.68rem',
-                            fontWeight: 600,
-                            background: 'transparent',
-                            color: '#2563eb',
-                            border: '1px solid rgba(37, 99, 235, 0.3)',
-                            borderRadius: 'var(--radius-sm)',
-                            cursor: 'pointer'
-                          }}
-                          title="Move back to Unprocessed"
-                        >
-                          <RotateCcw size={10} />
-                          Undo
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => onViewInExcel?.(p.ownerCode, p.month || month)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              padding: '2px 8px',
+                              height: '22px',
+                              fontSize: '0.70rem',
+                              fontWeight: 700,
+                              background: 'rgba(16, 185, 129, 0.1)',
+                              color: '#059669',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              borderRadius: 'var(--radius-sm)',
+                              cursor: 'pointer'
+                            }}
+                            title={`Open ${p.ownerName}'s invoice in Excel Sheet View`}
+                          >
+                            <Eye size={12} />
+                            <span>View</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSingleUnprocess(p)}
+                            disabled={actionLoading}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              padding: '2px 7px',
+                              height: '22px',
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              background: 'transparent',
+                              color: '#2563eb',
+                              border: '1px solid rgba(37, 99, 235, 0.3)',
+                              borderRadius: 'var(--radius-sm)',
+                              cursor: 'pointer'
+                            }}
+                            title="Move back to Unprocessed"
+                          >
+                            <RotateCcw size={10} />
+                            <span>Undo</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
