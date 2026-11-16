@@ -66,7 +66,9 @@ const AppContent: React.FC = () => {
   });
 
   const { selectedMonth, setSelectedMonth } = useMonth();
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    return localStorage.getItem('activeTab') || 'dashboard';
+  });
   const [dbInfo, setDbInfo] = useState<{ connected: boolean; database?: string; server?: string }>({
     connected: true,
     database: 'Invoicing_System'
@@ -78,6 +80,11 @@ const AppContent: React.FC = () => {
     excelTab: 'unprocessed';
     month?: string;
   } | null>(null);
+
+  // Persist active tab to localStorage so reload keeps the user on the same tab
+  useEffect(() => {
+    localStorage.setItem('activeTab', currentTab);
+  }, [currentTab]);
 
   useEffect(() => {
     let isMounted = true;
@@ -101,6 +108,7 @@ const AppContent: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('activeTab');
     setUser(null);
   };
 

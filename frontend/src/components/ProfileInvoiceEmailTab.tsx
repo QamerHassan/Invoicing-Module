@@ -1111,26 +1111,22 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                 <thead>
                   <tr>
                     <th style={{ width: '30px', textAlign: 'center' }}>#</th>
-                    <th style={{ minWidth: '90px', textAlign: 'left' }}>Project</th>
-                    <th style={{ minWidth: '80px', textAlign: 'left' }}>Stack</th>
-                    <th style={{ minWidth: '80px', textAlign: 'left' }}>Invoice To</th>
-                    <th style={{ minWidth: '70px', textAlign: 'right' }}>Charged USD</th>
+                    <th style={{ minWidth: '100px', textAlign: 'left' }}>Recipient</th>
+                    <th style={{ minWidth: '70px', textAlign: 'left' }}>Month</th>
+                    <th style={{ minWidth: '60px', textAlign: 'center' }}>Invoices</th>
+                    <th style={{ minWidth: '90px', textAlign: 'right' }}>Total Invoice</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayRows.map((r: any, idx: number) => (
-                    <tr key={r.cmpProfInvoiceCode || idx}>
-                      <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                        {idx + 1}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{r.projectName || '-'}</td>
-                      <td style={{ color: 'var(--text-muted)' }}>{r.stack || '-'}</td>
-                      <td>{r.invoiceToName || '-'}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--excel-actual-color)' }}>
-                        {fmtUsd(r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost)}
-                      </td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>1</td>
+                    <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{activeOwnerName || '-'}</td>
+                    <td style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{cleanMonth || '-'}</td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{ownerTotals.count}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.88rem', color: 'var(--excel-actual-color)' }}>
+                      ${Math.round(ownerTotals.usd).toLocaleString()}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             )}
