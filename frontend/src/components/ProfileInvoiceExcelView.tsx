@@ -11,7 +11,8 @@ import {
   Mail,
   CheckCircle,
   Archive,
-  Users
+  Users,
+  Save
 } from 'lucide-react';
 import { api } from '../api/client';
 import { LoadingIndicator } from './LoadingIndicator';
@@ -55,7 +56,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [loading, setLoading] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [togglingCode, setTogglingCode] = useState<number | null>(null);
   type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
   const [editingCell, setEditingCell] = useState<{
     rowIdx: number;
@@ -66,7 +66,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     value: string;
     
   } | null>(null);
-  const [savingCell, setSavingCell] = useState<boolean>(false);
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colKey: string } | null>(null);
   const [hasConfirmedFinalized, setHasConfirmedFinalized] = useState<boolean>(false);
   type ExcelSubTab = 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed';
@@ -95,8 +94,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [unprocessedLoading, setUnprocessedLoading] = useState<boolean>(false);
   const [unprocessedRefreshKey, setUnprocessedRefreshKey] = useState<number>(0);
 
-  // Runtime Auto-Save state
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Manual Save State (auto-save removed as per user request)
+  const [pendingRowUpdates, setPendingRowUpdates] = useState<Map<number, ProfileInvoiceRowUpdateRequest>>(new Map());
+  const [pendingProjectUpdates, setPendingProjectUpdates] = useState<Map<number, ProfileInvoiceProjectUpdateRequest>>(new Map());
+  const [isSavingChanges, setIsSavingChanges] = useState<boolean>(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  const hasUnsavedChanges = pendingRowUpdates.size > 0 || pendingProjectUpdates.size > 0;
+  const unsavedCount = pendingRowUpdates.size + pendingProjectUpdates.size;
 
   // Identifies heads that must start UNCHECKED by default (Job Holder, Support, Rizviz Share, Second Resource)
   const isDefaultUncheckedHead = (serviceHead?: string | null): boolean => {
@@ -402,11 +407,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   }, [onMonthChange, onOwnerChange]);
 
-  const handleToggleIncluded = async (code: number, checked: boolean, rowIdx?: number) => {
+  const handleToggleIncluded = (code: number, checked: boolean, rowIdx?: number) => {
     if (!checkConfirmFinalized() || !data) return;
 
     // 1. Instant optimistic state update
-    const prevData = data;
     const newRows = [...data.rows];
     let targetIdx = rowIdx !== undefined && rowIdx >= 0 ? rowIdx : newRows.findIndex(r => r.cmpProfInvoiceCode === code);
     if (targetIdx >= 0) {
@@ -437,144 +441,111 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       rows: newRows,
       otherChargeSum: Math.round(newOtherSum),
       totalInvoice: Math.round(newTotalInvoice)
-      // data.totalCostSum and data.finalUsdSum are strictly preserved!
     });
 
-    // 3. Background server save if code is a real invoice record or virtual negative project code
+    // 3. Record pending row update for manual save (auto-save removed)
     if (code !== 0) {
-      setTogglingCode(code);
-      setAutoSaveStatus('saving');
-      setError(null);
-      try {
-        const payload: ProfileInvoiceRowUpdateRequest = { 
+      setPendingRowUpdates(prev => {
+        const next = new Map(prev);
+        const existing = next.get(code) || {};
+        next.set(code, {
+          ...existing,
           isIncluded: checked,
           monthYear: cleanMonth,
           groupOwnerCode: Number(selectedOwnerCode) || undefined
-        };
-
-        // Bundle active cell edit on this row if any
-        if (editingCell && editingCell.code === code) {
-          const val = parseFloat(editingCell.value);
-          if (!isNaN(val)) {
-            if (editingCell.field === 'finalUsd' || editingCell.field === 'otherCharge') {
-              payload.chargedAmtUsd = val;
-              payload.totalCost = val;
-            } else if (editingCell.field === 'totalCost') {
-              payload.totalCost = val;
-            } else if (editingCell.field === 'agreedRate') {
-              payload.agreedRate = val;
-            }
-          } else if (editingCell.field === 'serviceHead') {
-            payload.remarks = editingCell.value;
-          }
-          setEditingCell(null);
-        }
-
-        await api.updateProfileInvoiceRow(code, payload);
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 2000);
-      } catch (err: any) {
-        console.error('Failed to update included status', err);
-        setData(prevData); // rollback on fail
-        setError(err?.message || 'Failed to update checkbox status.');
-        setAutoSaveStatus('error');
-        setTimeout(() => setAutoSaveStatus('idle'), 3500);
-      } finally {
-        setTogglingCode(null);
-      }
+        });
+        return next;
+      });
     }
   };
 
-  const handleCellSave = async () => {
+  const handleCellSave = () => {
     if (!editingCell || !data) return;
-    const { rowType, code, projectCode, field, value } = editingCell;
+    const { rowType, code, projectCode, field, value, rowIdx } = editingCell;
 
     if (!checkConfirmFinalized()) {
       setEditingCell(null);
       return;
     }
 
-    const prevData = data;
-    try {
-      setSavingCell(true);
-      setAutoSaveStatus('saving');
-      setError(null);
+    const newRows = [...data.rows];
+    let targetIdx = rowIdx !== undefined && rowIdx >= 0 ? rowIdx : newRows.findIndex(r => r.cmpProfInvoiceCode === code);
+    if (targetIdx >= 0) {
+      const targetRow = { ...newRows[targetIdx] };
+      const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
+      const numVal = parseFloat(cleanVal);
 
-      if ((rowType === 'ProjectHeader' || field === 'agreedRate') && projectCode) {
-        const req: ProfileInvoiceProjectUpdateRequest = {
+      if (field === 'agreedRate') {
+        targetRow.agreedRate = isNaN(numVal) ? targetRow.agreedRate : numVal;
+      } else if (field === 'finalUsd') {
+        targetRow.finalUsd = isNaN(numVal) ? targetRow.finalUsd : numVal;
+      } else if (field === 'otherCharge') {
+        targetRow.otherCharge = isNaN(numVal) ? targetRow.otherCharge : numVal;
+      } else if (field === 'totalCost') {
+        targetRow.totalCost = isNaN(numVal) ? targetRow.totalCost : numVal;
+      } else if (field === 'serviceHead') {
+        targetRow.serviceHead = value;
+      } else if (field === 'projectName') {
+        targetRow.projectName = value;
+      } else if (field === 'salaryRate') {
+        targetRow.salaryRate = value;
+      } else if (field === 'projStatus') {
+        targetRow.projStatus = value;
+      } else if (field === 'stack') {
+        targetRow.stack = value;
+      }
+      newRows[targetIdx] = targetRow;
+    }
+
+    // Recalculate sums if otherCharge or finalUsd changed
+    let newOtherSum = 0;
+    for (const r of newRows) {
+      if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
+      if (r.isIncluded && r.otherCharge != null && r.otherCharge > 0) {
+        newOtherSum += r.otherCharge;
+      }
+    }
+    const newTotalInvoice = (data.actualChargesSum || 0) + newOtherSum;
+
+    setData({
+      ...data,
+      rows: newRows,
+      otherChargeSum: Math.round(newOtherSum),
+      totalInvoice: Math.round(newTotalInvoice)
+    });
+
+    // Record pending update for manual save (auto-save removed)
+    if ((rowType === 'ProjectHeader' || field === 'agreedRate') && projectCode) {
+      setPendingProjectUpdates(prev => {
+        const next = new Map(prev);
+        const req: ProfileInvoiceProjectUpdateRequest = next.get(projectCode) || {
           monthYear: cleanMonth,
           groupOwnerCode: Number(selectedOwnerCode)
         };
-
-        if (field === 'agreedRate') {
-          const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
-          const num = parseFloat(cleanVal);
-          if (isNaN(num) || num < 0) {
-            flashMsg('error', 'Please enter a valid non-negative rate.');
-            setEditingCell(null);
-            setAutoSaveStatus('error');
-            setTimeout(() => setAutoSaveStatus('idle'), 3500);
-            return;
-          }
-          req.agreedRate = num;
-        } else if (field === 'hoursDays') {
-          const parts = value.split('/');
-          if (parts.length === 2) {
-            req.proRateDays = parseInt(parts[0], 10) || 0;
-            req.monthDays = parseInt(parts[1], 10) || 0;
-          } else {
-            req.proRateDays = parseInt(parts[0], 10) || 0;
-          }
-        } else if (field === 'salaryRate') {
-          req.salaryRate = value;
-        } else if (field === 'projectName') {
-          req.projectName = value;
-        } else if (field === 'jobType') {
-          req.jobType = value;
-        } else if (field === 'projStatus') {
-          req.projStatus = value;
-        } else if (field === 'startEndDate') {
-          req.startEndDate = value;
-        } else if (field === 'profileNature') {
-          req.profileNature = value;
-        } else if (field === 'stack') {
-          req.stack = value;
-        }
-
-        const res = await api.updateProfileInvoiceProject(projectCode, req);
-        if (res.excelView) {
-          setData(normalizeExcelViewData(res.excelView));
-        } else {
-          const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-          setData(normalizeExcelViewData(fresh));
-        }
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 2500);
-        flashMsg('success', res.message || `Project #${projectCode} details successfully updated in database.`);
-      } else if (code) {
-        const req: ProfileInvoiceRowUpdateRequest = {};
-        if (field === 'finalUsd' || field === 'otherCharge') {
-          const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
-          const num = parseFloat(cleanVal);
-          if (isNaN(num)) { setEditingCell(null); return; }
+        const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
+        const num = parseFloat(cleanVal);
+        if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
+        else if (field === 'projectName') req.projectName = value;
+        else if (field === 'salaryRate') req.salaryRate = value;
+        else if (field === 'projStatus') req.projStatus = value;
+        else if (field === 'stack') req.stack = value;
+        next.set(projectCode, req);
+        return next;
+      });
+    } else if (code) {
+      setPendingRowUpdates(prev => {
+        const next = new Map(prev);
+        const req: ProfileInvoiceRowUpdateRequest = next.get(code) || {
+          monthYear: cleanMonth,
+          groupOwnerCode: Number(selectedOwnerCode)
+        };
+        const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
+        const num = parseFloat(cleanVal);
+        if ((field === 'finalUsd' || field === 'otherCharge') && !isNaN(num)) {
           req.chargedAmtUsd = num;
           req.totalCost = num;
-        } else if (field === 'totalCost') {
-          const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
-          const num = parseFloat(cleanVal);
-          if (isNaN(num)) { setEditingCell(null); return; }
+        } else if (field === 'totalCost' && !isNaN(num)) {
           req.totalCost = num;
-        } else if (field === 'agreedRate') {
-          const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
-          const num = parseFloat(cleanVal);
-          if (isNaN(num) || num < 0) {
-            flashMsg('error', 'Please enter a valid non-negative rate.');
-            setEditingCell(null);
-            setAutoSaveStatus('error');
-            setTimeout(() => setAutoSaveStatus('idle'), 3500);
-            return;
-          }
-          req.agreedRate = num;
         } else if (field === 'serviceHead') {
           req.remarks = value;
         } else if (field === 'salaryRate') {
@@ -582,28 +553,39 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         } else if (field === 'projStatus') {
           req.status = value;
         }
+        next.set(code, req);
+        return next;
+      });
+    }
 
-        const res = await api.updateProfileInvoiceRow(code, req);
-        if (res.excelView) {
-          setData(normalizeExcelViewData(res.excelView));
-        } else {
-          const fresh = await api.getProfileInvoiceExcelView(Number(selectedOwnerCode), cleanMonth);
-          setData(normalizeExcelViewData(fresh));
-        }
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 2500);
-        flashMsg('success', res.message || 'Row successfully updated.');
+    setEditingCell(null);
+  };
+
+  const handleManualSave = async () => {
+    if (!data || !hasUnsavedChanges || isSavingChanges) return;
+    setIsSavingChanges(true);
+    setError(null);
+    try {
+      // 1. Commit pending project updates
+      for (const [projectCode, req] of pendingProjectUpdates.entries()) {
+        await api.updateProfileInvoiceProject(projectCode, req);
       }
+      // 2. Commit pending row updates
+      for (const [code, req] of pendingRowUpdates.entries()) {
+        await api.updateProfileInvoiceRow(code, req);
+      }
+
+      setPendingRowUpdates(new Map());
+      setPendingProjectUpdates(new Map());
+      setSaveSuccessMsg('All changes saved successfully!');
+      setTimeout(() => setSaveSuccessMsg(null), 3500);
+      flashMsg('success', '✓ All changes successfully saved to database.');
     } catch (err: any) {
-      console.error('Failed to update cell amount', err);
-      setData(prevData); // rollback on fail
-      setError(err?.message || 'Failed to update amount.');
-      setAutoSaveStatus('error');
-      setTimeout(() => setAutoSaveStatus('idle'), 3500);
-      flashMsg('error', err?.message || 'Failed to update amount.');
+      console.error('Failed to save changes to database', err);
+      setError(err?.message || 'Failed to save changes to database.');
+      flashMsg('error', err?.message || 'Failed to save changes.');
     } finally {
-      setSavingCell(false);
-      setEditingCell(null);
+      setIsSavingChanges(false);
     }
   };
 
@@ -641,7 +623,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             type={isNumberField ? 'number' : 'text'}
             autoFocus
             value={editingCell.value}
-            disabled={savingCell}
+            disabled={isSavingChanges}
             onChange={(e) => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
             onBlur={handleCellSave}
             onKeyDown={(e) => {
@@ -1335,50 +1317,49 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 {loading ? 'Loading...' : 'Refresh Excel View'}
               </button>
 
-              {/* Auto-Save Status Indicator */}
-              {autoSaveStatus === 'saving' && (
+              {/* Manual Save Button (auto-save removed as per user request) */}
+              <button
+                onClick={handleManualSave}
+                disabled={!hasUnsavedChanges || isSavingChanges}
+                className={hasUnsavedChanges ? "btn-primary" : "btn-secondary"}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '2px 14px',
+                  height: '32px',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  borderRadius: '6px',
+                  background: hasUnsavedChanges
+                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                    : 'var(--bg-surface)',
+                  color: hasUnsavedChanges ? '#ffffff' : 'var(--text-muted)',
+                  border: hasUnsavedChanges ? '1.5px solid #059669' : '1px solid var(--border-subtle)',
+                  boxShadow: hasUnsavedChanges ? '0 0 12px rgba(16, 185, 129, 0.45)' : 'none',
+                  cursor: hasUnsavedChanges ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease',
+                  opacity: hasUnsavedChanges ? 1 : 0.65
+                }}
+                title={hasUnsavedChanges ? `Save ${unsavedCount} pending changes to database` : 'No unsaved changes to save'}
+              >
+                <Save size={15} className={isSavingChanges ? 'spin' : ''} />
+                <span>{isSavingChanges ? 'Saving...' : hasUnsavedChanges ? `Save (${unsavedCount})` : 'Save'}</span>
+              </button>
+
+              {saveSuccessMsg && (
                 <span style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '3px',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  color: '#2563eb',
-                  background: 'rgba(37, 99, 235, 0.08)',
-                  padding: '2px 6px',
-                  borderRadius: '3px'
-                }}>
-                  <RefreshCw size={11} className="spin" /> Saving...
-                </span>
-              )}
-              {autoSaveStatus === 'saved' && (
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
                   color: '#059669',
-                  background: 'rgba(5, 150, 105, 0.08)',
-                  padding: '2px 6px',
-                  borderRadius: '3px'
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  padding: '2px 8px',
+                  borderRadius: '4px'
                 }}>
-                  <Check size={11} /> Saved
-                </span>
-              )}
-              {autoSaveStatus === 'error' && (
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  color: '#dc2626',
-                  background: 'rgba(220, 38, 38, 0.08)',
-                  padding: '2px 6px',
-                  borderRadius: '3px'
-                }}>
-                  <AlertTriangle size={11} /> Save Failed
+                  <Check size={12} /> Saved
                 </span>
               )}
             </div>
@@ -1661,24 +1642,41 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           </span>
                         </div>
 
-                        {/* TOTAL INVOICE badge */}
+                        {/* TOTAL INVOICE badge - Prominent, Wide & Bold */}
                         <div
-                          title="Calculated (Total Actual + Total Other)"
+                          title="Calculated Total Invoice (Total Actual + Total Other)"
                           style={{
                             display: 'inline-flex',
-                            alignItems: 'baseline',
-                            gap: '0.35rem',
-                            background: 'rgba(37, 99, 235, 0.10)',
-                            border: '1.5px solid rgba(37, 99, 235, 0.35)',
-                            padding: '2px 10px',
-                            borderRadius: '4px',
-                            cursor: 'default'
+                            alignItems: 'center',
+                            gap: '0.65rem',
+                            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(79, 70, 229, 0.12) 100%)',
+                            border: '2px solid #2563eb',
+                            padding: '5px 18px',
+                            borderRadius: '8px',
+                            boxShadow: '0 2px 12px rgba(37, 99, 235, 0.25)',
+                            cursor: 'default',
+                            minWidth: '230px',
+                            justifyContent: 'space-between'
                           }}
                         >
-                          <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            fontSize: '0.80rem',
+                            fontWeight: 900,
+                            color: 'var(--text-main)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.06em',
+                            whiteSpace: 'nowrap'
+                          }}>
                             TOTAL INVOICE:
                           </span>
-                          <span style={{ fontSize: '1.12rem', fontWeight: 900, color: '#2563eb', fontFamily: 'var(--font-mono)' }}>
+                          <span style={{
+                            fontSize: '1.38rem',
+                            fontWeight: 900,
+                            color: '#2563eb',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: '-0.02em',
+                            textShadow: '0 1px 2px rgba(37, 99, 235, 0.20)'
+                          }}>
                             ${data.totalInvoice.toLocaleString()}
                           </span>
                         </div>
@@ -2050,7 +2048,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                             <input
                               type="checkbox"
                               checked={Boolean(row.isIncluded)}
-                              disabled={togglingCode === (row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)))}
+                              disabled={isSavingChanges}
                               onChange={(e) => handleToggleIncluded(row.cmpProfInvoiceCode ?? -(row.projectCode || (idx + 1000)), e.target.checked, idx)}
                               title="Include in totals - click to toggle & save"
                               style={{ cursor: 'pointer', width: '14px', height: '14px' }}

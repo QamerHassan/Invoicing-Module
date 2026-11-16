@@ -92,6 +92,22 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>('');
 
+  // Persisted emailed status map per month
+  const getEmailedOwnersMap = useCallback((): Record<string, { emailedAt: string; toEmail?: string }> => {
+    try {
+      const raw = localStorage.getItem(`profile_invoice_emailed_${cleanMonth}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, [cleanMonth]);
+
+  const [emailedOwners, setEmailedOwners] = useState<Record<string, { emailedAt: string; toEmail?: string }>>({});
+
+  useEffect(() => {
+    setEmailedOwners(getEmailedOwnersMap());
+  }, [getEmailedOwnersMap]);
+
   const loadProcessedProfiles = useCallback(async () => {
     if (!cleanMonth) return;
     setLoadingProfiles(true);
@@ -114,14 +130,24 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [viewMode, loadProcessedProfiles]);
 
   const filteredProfiles = useMemo(() => {
-    if (!search.trim()) return processedProfiles;
-    const q = search.trim().toLowerCase();
-    const words = q.split(/\s+/).filter(Boolean);
-    return processedProfiles.filter(p => {
+    const list = processedProfiles.filter(p => {
+      if (!search.trim()) return true;
+      const q = search.trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
       const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
       return words.every(w => text.includes(w));
     });
-  }, [processedProfiles, search]);
+
+    // Partition: Un-emailed (Pending) at the top, Already Emailed at the bottom
+    return [...list].sort((a, b) => {
+      const aEmailed = Boolean(emailedOwners[String(a.ownerCode)]);
+      const bEmailed = Boolean(emailedOwners[String(b.ownerCode)]);
+      if (aEmailed !== bEmailed) {
+        return aEmailed ? 1 : -1; // un-emailed first!
+      }
+      return (a.ownerName || '').localeCompare(b.ownerName || '');
+    });
+  }, [processedProfiles, search, emailedOwners]);
 
   // ─── COMPOSE VIEW STATE ─────────────────────────────────────────────
   const [processedRows, setProcessedRows] = useState<ProfileInvoiceProcessedRowDto[]>([]);
@@ -361,6 +387,23 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         setSuccessMsg(result.message || `Invoice email sent successfully to ${toEmail.trim()}!`);
         setFieldErrors({});
 
+        // Persist emailed status for this owner & month
+        if (ownerCode) {
+          const updated = {
+            ...getEmailedOwnersMap(),
+            [String(ownerCode)]: {
+              emailedAt: new Date().toISOString(),
+              toEmail: toEmail.trim()
+            }
+          };
+          try {
+            localStorage.setItem(`profile_invoice_emailed_${cleanMonth}`, JSON.stringify(updated));
+            setEmailedOwners(updated);
+          } catch (e) {
+            console.error('Failed to save emailed state', e);
+          }
+        }
+
         if (activeRemember && activeSenderEmail) {
           setSavedSenderEmail(activeSenderEmail);
           setHasSavedPassword(true);
@@ -562,67 +605,113 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                   <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                   <th style={{ minWidth: '110px', textAlign: 'center' }}>Total Invoices</th>
                   <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
-                  <th style={{ minWidth: '90px', textAlign: 'center' }}>Action</th>
+                  <th style={{ minWidth: '140px', textAlign: 'center' }}>Emailed</th>
+                  <th style={{ minWidth: '100px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProfiles.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                       <Mail size={24} style={{ color: 'var(--text-subtle)', margin: '0 auto 8px', display: 'block' }} />
                       {search ? `No processed profiles matching "${search}".` : 'Koi processed invoice nahi.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredProfiles.map((p, i) => (
-                    <tr
-                      key={p.ownerCode}
-                      className="table-row-hover"
-                    >
-                      <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                        {i + 1}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
-                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
-                        {p.month}
-                      </td>
-                      <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
-                        {p.rowsCount.toLocaleString()}
-                      </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
-                        {fmtUsd(p.totalInvoice || p.totalCost)}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOwnerCode(p.ownerCode);
-                            if (onOwnerChange) onOwnerChange(p.ownerCode);
-                            setViewMode('compose');
-                          }}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            padding: '2px 10px',
-                            height: '22px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            background: '#2563eb',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: 'var(--radius-sm)',
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                          }}
-                          title={`Compose invoice email for ${p.ownerName}`}
-                        >
-                          <Mail size={11} />
-                          <span>Send Email</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  filteredProfiles.map((p, i) => {
+                    const isEmailed = Boolean(emailedOwners[String(p.ownerCode)]);
+                    const emailInfo = emailedOwners[String(p.ownerCode)];
+                    return (
+                      <tr
+                        key={p.ownerCode}
+                        className="table-row-hover"
+                        style={{
+                          background: isEmailed ? 'rgba(16, 185, 129, 0.03)' : undefined
+                        }}
+                      >
+                        <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                          {i + 1}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
+                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                          {p.month}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 600 }}>
+                          {p.rowsCount.toLocaleString()}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
+                          {fmtUsd(p.totalInvoice || p.totalCost)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {isEmailed ? (
+                            <div 
+                              title={`Emailed to ${emailInfo?.toEmail || 'recipient'}${emailInfo?.emailedAt ? ` on ${new Date(emailInfo.emailedAt).toLocaleDateString()}` : ''}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                border: '1.5px solid #10b981',
+                                color: '#059669',
+                                borderRadius: '5px',
+                                padding: '2px 8px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                boxShadow: '0 1px 3px rgba(16, 185, 129, 0.12)'
+                              }}
+                            >
+                              <CheckCircle2 size={13} color="#10b981" />
+                              <span>Already Emailed</span>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              background: 'rgba(100, 116, 139, 0.08)',
+                              border: '1px dashed rgba(100, 116, 139, 0.35)',
+                              color: 'var(--text-muted)',
+                              borderRadius: '5px',
+                              padding: '2px 8px',
+                              fontSize: '0.70rem',
+                              fontWeight: 600
+                            }}>
+                              <span>Not Emailed</span>
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOwnerCode(p.ownerCode);
+                              if (onOwnerChange) onOwnerChange(p.ownerCode);
+                              setViewMode('compose');
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '2px 10px',
+                              height: '24px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: isEmailed ? 'var(--bg-surface)' : '#2563eb',
+                              color: isEmailed ? 'var(--text-main)' : '#ffffff',
+                              border: isEmailed ? '1px solid var(--border-medium)' : 'none',
+                              borderRadius: 'var(--radius-sm)',
+                              cursor: 'pointer',
+                              boxShadow: isEmailed ? 'none' : '0 1px 2px rgba(0,0,0,0.1)'
+                            }}
+                            title={isEmailed ? `Re-send invoice email for ${p.ownerName}` : `Compose invoice email for ${p.ownerName}`}
+                          >
+                            <Mail size={12} />
+                            <span>{isEmailed ? 'Re-send' : 'Send Email'}</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
