@@ -348,6 +348,7 @@ export interface SendProfileInvoiceEmailRequest {
   rememberSettings?: boolean;
   processedOnly?: boolean;
   excludeToBeDiscussed?: boolean;
+  withTotalCost?: boolean;
   specificCodes?: number[];
 }
 
@@ -385,6 +386,7 @@ export interface ProfileInvoiceProcessedRowDto {
   totalIncomePkr: number;
   chargedAmtPkr: number;
   chargedAmtUsd: number;
+  totalCost?: number;
   ccy?: number | null;
   status?: string | null;
   insertBy?: string | null;

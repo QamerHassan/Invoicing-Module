@@ -258,6 +258,7 @@ public class ProfileInvoicesController : ControllerBase
         [FromQuery] bool processedOnly = false,
         [FromQuery] bool excludeToBeDiscussed = false,
         [FromQuery] int? specificOwnerCode = null,
+        [FromQuery] bool withTotalCost = false,
         CancellationToken ct = default)
     {
         int effectiveCode = (specificOwnerCode.HasValue && specificOwnerCode.Value > 0)
@@ -274,12 +275,12 @@ public class ProfileInvoicesController : ControllerBase
         if (excludeToBeDiscussed)
         {
             bytes = await _profileInvoicingService.GetExcelDownloadAsync(
-                effectiveCode, month, processedOnly, excludeToBeDiscussed: true, specificOwnerCode: effectiveCode, ct: ct);
+                effectiveCode, month, processedOnly, excludeToBeDiscussed: true, specificOwnerCode: effectiveCode, withTotalCost: withTotalCost, ct: ct);
         }
         else
         {
             bytes = await _profileInvoicingService.GetExcelDownloadAsync(
-                effectiveCode, month, processedOnly, specificOwnerCode: effectiveCode, ct: ct);
+                effectiveCode, month, processedOnly, excludeToBeDiscussed: false, specificOwnerCode: effectiveCode, withTotalCost: withTotalCost, ct: ct);
         }
 
         string filename = processedOnly
@@ -336,6 +337,7 @@ public class ProfileInvoicesController : ControllerBase
                 processedOnly: isProcessed,
                 excludeToBeDiscussed: request.ExcludeToBeDiscussed,
                 specificOwnerCode: request.GroupOwnerCode,
+                withTotalCost: request.WithTotalCost,
                 ct: ct);
 
             string filename = isProcessed

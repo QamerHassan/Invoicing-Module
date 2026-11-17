@@ -63,7 +63,7 @@ public interface IProfileInvoicingService
     /// Generate real .xlsx file bytes matching PB cb_10 layout via ClosedXML.
     /// When excludeToBeDiscussed=true, filters out rows where to_be_discussed = 1.
     /// </summary>
-    Task<byte[]> GetExcelDownloadAsync(int groupOwnerCode, string monthYear, bool processedOnly, bool excludeToBeDiscussed, int? specificOwnerCode = null, CancellationToken ct = default);
+    Task<byte[]> GetExcelDownloadAsync(int groupOwnerCode, string monthYear, bool processedOnly, bool excludeToBeDiscussed, int? specificOwnerCode = null, bool withTotalCost = false, CancellationToken ct = default);
 
     /// <summary>
     /// Get processed profile invoice rows for a month (matching PB dw_status_processed).

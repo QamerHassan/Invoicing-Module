@@ -438,8 +438,8 @@ export const api = {
     return handleResponse<ProfileInvoiceExcelViewResult>(res);
   },
 
-  async downloadProfileInvoiceExcel(groupOwnerCode: number, month: string, processedOnly: boolean = false, excludeToBeDiscussed: boolean = false): Promise<Blob> {
-    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/excel-download?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&processedOnly=${processedOnly}&excludeToBeDiscussed=${excludeToBeDiscussed}`, {
+  async downloadProfileInvoiceExcel(groupOwnerCode: number, month: string, processedOnly: boolean = false, excludeToBeDiscussed: boolean = false, withTotalCost: boolean = false): Promise<Blob> {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/excel-download?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&processedOnly=${processedOnly}&excludeToBeDiscussed=${excludeToBeDiscussed}&withTotalCost=${withTotalCost}`, {
       headers: { ...getAuthHeader() }
     });
     if (!res.ok) {

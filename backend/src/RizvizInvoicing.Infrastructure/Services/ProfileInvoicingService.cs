@@ -2700,14 +2700,18 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
     public Task<byte[]> GetExcelDownloadAsync(
         int groupOwnerCode, string monthYear, CancellationToken ct = default)
-        => GetExcelDownloadAsync(groupOwnerCode, monthYear, false, false, null, ct);
+        => GetExcelDownloadAsync(groupOwnerCode, monthYear, false, false, null, false, ct);
 
     public Task<byte[]> GetExcelDownloadAsync(
         int groupOwnerCode, string monthYear, bool processedOnly, int? specificOwnerCode = null, CancellationToken ct = default)
-        => GetExcelDownloadAsync(groupOwnerCode, monthYear, processedOnly, false, specificOwnerCode, ct);
+        => GetExcelDownloadAsync(groupOwnerCode, monthYear, processedOnly, false, specificOwnerCode, false, ct);
+
+    public Task<byte[]> GetExcelDownloadAsync(
+        int groupOwnerCode, string monthYear, bool processedOnly, bool excludeToBeDiscussed, int? specificOwnerCode = null, CancellationToken ct = default)
+        => GetExcelDownloadAsync(groupOwnerCode, monthYear, processedOnly, excludeToBeDiscussed, specificOwnerCode, false, ct);
 
     public async Task<byte[]> GetExcelDownloadAsync(
-        int groupOwnerCode, string monthYear, bool processedOnly, bool excludeToBeDiscussed, int? specificOwnerCode = null, CancellationToken ct = default)
+        int groupOwnerCode, string monthYear, bool processedOnly, bool excludeToBeDiscussed, int? specificOwnerCode = null, bool withTotalCost = false, CancellationToken ct = default)
     {
         var view = await GetExcelViewAsync(groupOwnerCode, monthYear, processedOnly, specificOwnerCode, ct, excludeToBeDiscussed);
 
@@ -2722,7 +2726,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
         ws.Style.Font.FontName = "Arial";
         ws.Style.Font.FontSize = 10;
         ws.ShowGridLines = false;
-        ws.SheetView.Freeze(4, 4);       // freeze panes: rows 1-4, cols A-D frozen
+        ws.SheetView.Freeze(4, withTotalCost ? 5 : 4);
 
         const string numFmt = "#,##0.00;(#,##0.00);-";
         const string redColor  = "FF0000";
@@ -2730,39 +2734,46 @@ public class ProfileInvoicingService : IProfileInvoicingService
         const string lightBlue = "DDEBF7";
         const string white     = "FFFFFF";
 
-        // ── Column widths (16 columns: Stack before Project Name; Inc after Other Charge) ──
-        // Col 1 (A): Profile Owner
-        // Col 2 (B): Project Code
-        // Col 3 (C): Stack
-        // Col 4 (D): Project Name
-        // Col 5 (E): Service Head
-        // Col 6 (F): Agreed Rate
-        // Col 7 (G): Hours/Days
-        // Col 8 (H): Actual Charges
-        // Col 9 (I): Other Charge
-        // Col 10 (J): Include
-        // Col 11 (K): Salary Rate
-        // Col 12 (L): Start Date / End Date
-        // Col 13 (M): Proj Status
-        // Col 14 (N): Job Type
-        // Col 15 (O): Profile Nature
-        // Col 16 (P): Handled From
-        ws.Column(1).Width  = 24; // Profile Owner
-        ws.Column(2).Width  = 13; // Project Code
-        ws.Column(3).Width  = 16; // Stack
-        ws.Column(4).Width  = 28; // Project Name
-        ws.Column(5).Width  = 20; // Service Head
-        ws.Column(6).Width  = 12; // Agreed Rate
-        ws.Column(7).Width  = 12; // Hours/Days
-        ws.Column(8).Width  = 15; // Actual Charges
-        ws.Column(9).Width  = 13; // Other Charge
-        ws.Column(10).Width = 10; // Include
-        ws.Column(11).Width = 12; // Salary Rate
-        ws.Column(12).Width = 24; // Start Date / End Date
-        ws.Column(13).Width = 13; // Proj Status
-        ws.Column(14).Width = 10; // Job Type
-        ws.Column(15).Width = 15; // Profile Nature
-        ws.Column(16).Width = 26; // Handled From
+        // Column widths
+        if (withTotalCost)
+        {
+            ws.Column(1).Width  = 24; // Profile Owner
+            ws.Column(2).Width  = 13; // Project Code
+            ws.Column(3).Width  = 16; // Stack
+            ws.Column(4).Width  = 28; // Project Name
+            ws.Column(5).Width  = 20; // Service Head
+            ws.Column(6).Width  = 14; // Total Cost
+            ws.Column(7).Width  = 12; // Agreed Rate
+            ws.Column(8).Width  = 12; // Hours/Days
+            ws.Column(9).Width  = 15; // Actual Charges
+            ws.Column(10).Width = 13; // Other Charge
+            ws.Column(11).Width = 10; // Include
+            ws.Column(12).Width = 12; // Salary Rate
+            ws.Column(13).Width = 24; // Start Date / End Date
+            ws.Column(14).Width = 13; // Proj Status
+            ws.Column(15).Width = 10; // Job Type
+            ws.Column(16).Width = 15; // Profile Nature
+            ws.Column(17).Width = 26; // Handled From
+        }
+        else
+        {
+            ws.Column(1).Width  = 24; // Profile Owner
+            ws.Column(2).Width  = 13; // Project Code
+            ws.Column(3).Width  = 16; // Stack
+            ws.Column(4).Width  = 28; // Project Name
+            ws.Column(5).Width  = 20; // Service Head
+            ws.Column(6).Width  = 12; // Agreed Rate
+            ws.Column(7).Width  = 12; // Hours/Days
+            ws.Column(8).Width  = 15; // Actual Charges
+            ws.Column(9).Width  = 13; // Other Charge
+            ws.Column(10).Width = 10; // Include
+            ws.Column(11).Width = 12; // Salary Rate
+            ws.Column(12).Width = 24; // Start Date / End Date
+            ws.Column(13).Width = 13; // Proj Status
+            ws.Column(14).Width = 10; // Job Type
+            ws.Column(15).Width = 15; // Profile Nature
+            ws.Column(16).Width = 26; // Handled From
+        }
 
         // ── Helper: apply base font across a cell ────────────────────────────────
         static void ApplyBase(IXLCell c, bool bold = false, string? color = null)
@@ -2775,23 +2786,50 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         int lastRow = Math.Max(5, 4 + view.Rows.Count);
 
-        // ── Row 1: metadata & live formula for Total Invoice ───────────────────────
+        // ── Row 1: metadata & live formulas ───────────────────────
         var c1A = ws.Cell(1, 1);
         c1A.Value = $"Profile Group Owner : {view.GroupOwnerName}";
         ApplyBase(c1A, bold: true);
 
-        var c1G = ws.Cell(1, 7);
-        c1G.Value = "Total Invoice";
-        ApplyBase(c1G, bold: true);
+        if (withTotalCost)
+        {
+            var c1E = ws.Cell(1, 5);
+            c1E.Value = "Total Cost";
+            ApplyBase(c1E, bold: true);
 
-        var c1H = ws.Cell(1, 8);
-        c1H.Value = "USD";
-        ApplyBase(c1H, bold: true);
+            var c1F = ws.Cell(1, 6);
+            c1F.FormulaA1 = "ROUND(F3, 0)";
+            ApplyBase(c1F, bold: true, color: redColor);
+            c1F.Style.NumberFormat.Format = numFmt;
 
-        var c1I = ws.Cell(1, 9);
-        c1I.FormulaA1 = "ROUND(H3 + I3, 0)";
-        ApplyBase(c1I, bold: true, color: redColor);
-        c1I.Style.NumberFormat.Format = numFmt;
+            var c1H = ws.Cell(1, 8);
+            c1H.Value = "Total Invoice";
+            ApplyBase(c1H, bold: true);
+
+            var c1I = ws.Cell(1, 9);
+            c1I.Value = "USD";
+            ApplyBase(c1I, bold: true);
+
+            var c1J = ws.Cell(1, 10);
+            c1J.FormulaA1 = "ROUND(I3 + J3, 0)";
+            ApplyBase(c1J, bold: true, color: redColor);
+            c1J.Style.NumberFormat.Format = numFmt;
+        }
+        else
+        {
+            var c1G = ws.Cell(1, 7);
+            c1G.Value = "Total Invoice";
+            ApplyBase(c1G, bold: true);
+
+            var c1H = ws.Cell(1, 8);
+            c1H.Value = "USD";
+            ApplyBase(c1H, bold: true);
+
+            var c1I = ws.Cell(1, 9);
+            c1I.FormulaA1 = "ROUND(H3 + I3, 0)";
+            ApplyBase(c1I, bold: true, color: redColor);
+            c1I.Style.NumberFormat.Format = numFmt;
+        }
 
         // ── Row 2: month ────────────────────────────────────────────────────────
         var c2A = ws.Cell(2, 1);
@@ -2800,28 +2838,64 @@ public class ProfileInvoicingService : IProfileInvoicingService
         c2A.Value = $"Month/Year : {monthDisplay}";
         ApplyBase(c2A, bold: true);
 
-        // ── Row 3: totals with live SUMIF formulas filtering only Include=1 (Col J) rows ───
-        var c3G = ws.Cell(3, 7);
-        c3G.Value = "Sum";
-        ApplyBase(c3G, bold: true);
+        // ── Row 3: totals with live SUMIF formulas ───
+        if (withTotalCost)
+        {
+            var c3E = ws.Cell(3, 5);
+            c3E.Value = "Sum";
+            ApplyBase(c3E, bold: true);
 
-        var c3H = ws.Cell(3, 8);
-        c3H.FormulaA1 = $"SUM(H5:H{lastRow})";
-        ApplyBase(c3H, bold: true, color: redColor);
-        c3H.Style.NumberFormat.Format = numFmt;
+            var c3F = ws.Cell(3, 6);
+            c3F.FormulaA1 = $"SUM(F5:F{lastRow})";
+            ApplyBase(c3F, bold: true, color: redColor);
+            c3F.Style.NumberFormat.Format = numFmt;
 
-        var c3I = ws.Cell(3, 9);
-        c3I.FormulaA1 = $"SUMIF(J5:J{lastRow}, 1, I5:I{lastRow})";
-        ApplyBase(c3I, bold: true, color: redColor);
-        c3I.Style.NumberFormat.Format = numFmt;
+            var c3H = ws.Cell(3, 8);
+            c3H.Value = "Sum";
+            ApplyBase(c3H, bold: true);
 
-        // ── Row 4: column header row (16 columns, navy fill, white bold, centered) ───
-        string[] headers = {
-            "Profile Owner", "Project Code", "Stack", "Project Name", "Service Head",
-            "Agreed Rate", "Hours/Days", "Actual Charges", "Other Charge", "Include",
-            "Salary Rate", "Start Date / End Date", "Proj. Status",
-            "Job Type", "Profile Nature", "Handled From"
-        };
+            var c3I = ws.Cell(3, 9);
+            c3I.FormulaA1 = $"SUM(I5:I{lastRow})";
+            ApplyBase(c3I, bold: true, color: redColor);
+            c3I.Style.NumberFormat.Format = numFmt;
+
+            var c3J = ws.Cell(3, 10);
+            c3J.FormulaA1 = $"SUMIF(K5:K{lastRow}, 1, J5:J{lastRow})";
+            ApplyBase(c3J, bold: true, color: redColor);
+            c3J.Style.NumberFormat.Format = numFmt;
+        }
+        else
+        {
+            var c3G = ws.Cell(3, 7);
+            c3G.Value = "Sum";
+            ApplyBase(c3G, bold: true);
+
+            var c3H = ws.Cell(3, 8);
+            c3H.FormulaA1 = $"SUM(H5:H{lastRow})";
+            ApplyBase(c3H, bold: true, color: redColor);
+            c3H.Style.NumberFormat.Format = numFmt;
+
+            var c3I = ws.Cell(3, 9);
+            c3I.FormulaA1 = $"SUMIF(J5:J{lastRow}, 1, I5:I{lastRow})";
+            ApplyBase(c3I, bold: true, color: redColor);
+            c3I.Style.NumberFormat.Format = numFmt;
+        }
+
+        // ── Row 4: column header row ───
+        string[] headers = withTotalCost
+            ? new[] {
+                "Profile Owner", "Project Code", "Stack", "Project Name", "Service Head",
+                "Total Cost", "Agreed Rate", "Hours/Days", "Actual Charges", "Other Charge", "Include",
+                "Salary Rate", "Start Date / End Date", "Proj. Status",
+                "Job Type", "Profile Nature", "Handled From"
+              }
+            : new[] {
+                "Profile Owner", "Project Code", "Stack", "Project Name", "Service Head",
+                "Agreed Rate", "Hours/Days", "Actual Charges", "Other Charge", "Include",
+                "Salary Rate", "Start Date / End Date", "Proj. Status",
+                "Job Type", "Profile Nature", "Handled From"
+              };
+
         for (int col = 1; col <= headers.Length; col++)
         {
             var ch = ws.Cell(4, col);
@@ -2835,11 +2909,11 @@ public class ProfileInvoicingService : IProfileInvoicingService
             ch.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
         }
 
-        // Helper to apply row-level formulas for Other Charge (PKR to USD) in Col 9 (I)
+        int otherCol = withTotalCost ? 10 : 9;
+
+        // Helper to apply row-level formulas for Other Charge (PKR to USD)
         void ApplyOtherChargeFormula(int rowNum, ProfileInvoiceExcelViewRowDto rowDto)
         {
-            // Only show Other Charge if row is explicitly INCLUDED (IsIncluded == true)!
-            // If unchecked (false or null), do NOT show any value in Other Charge!
             if (rowDto.IsIncluded != true)
             {
                 return;
@@ -2851,21 +2925,21 @@ public class ProfileInvoicingService : IProfileInvoicingService
             {
                 string pkr = rowDto.ChargedAmtPkr!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 string rate = rowDto.ExchangeRate!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                ws.Cell(rowNum, 9).FormulaA1 = $"ROUND({pkr} / {rate}, 0)";
-                ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
+                ws.Cell(rowNum, otherCol).FormulaA1 = $"ROUND({pkr} / {rate}, 0)";
+                ws.Cell(rowNum, otherCol).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                ws.Cell(rowNum, otherCol).Style.NumberFormat.Format = numFmt;
             }
             else if (rowDto.OtherCharge.HasValue && rowDto.OtherCharge.Value > 0)
             {
-                ws.Cell(rowNum, 9).SetValue(rowDto.OtherCharge.Value);
-                ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
+                ws.Cell(rowNum, otherCol).SetValue(rowDto.OtherCharge.Value);
+                ws.Cell(rowNum, otherCol).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                ws.Cell(rowNum, otherCol).Style.NumberFormat.Format = numFmt;
             }
             else if (rowDto.FinalUsd.HasValue && rowDto.FinalUsd.Value > 0)
             {
-                ws.Cell(rowNum, 9).SetValue(rowDto.FinalUsd.Value);
-                ws.Cell(rowNum, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                ws.Cell(rowNum, 9).Style.NumberFormat.Format = numFmt;
+                ws.Cell(rowNum, otherCol).SetValue(rowDto.FinalUsd.Value);
+                ws.Cell(rowNum, otherCol).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                ws.Cell(rowNum, otherCol).Style.NumberFormat.Format = numFmt;
             }
         }
 
@@ -2881,93 +2955,182 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             bool isHeader = r.RowType == "ProjectHeader";
 
-            // Include flag in Column 10 (J):
-            // Show 1 only for included rows; if unchecked (0), leave blank (do not show 0)
+            int incCol = withTotalCost ? 11 : 10;
             if (r.IsIncluded == true)
             {
-                ws.Cell(currentRow, 10).SetValue(1);
-                ws.Cell(currentRow, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                ws.Cell(currentRow, 10).Style.NumberFormat.Format = "0";
+                ws.Cell(currentRow, incCol).SetValue(1);
+                ws.Cell(currentRow, incCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                ws.Cell(currentRow, incCol).Style.NumberFormat.Format = "0";
             }
 
-            if (isHeader)
+            if (withTotalCost)
             {
-                if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
-                if (r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
+                if (isHeader)
                 {
-                    ws.Cell(currentRow, 2).SetValue(r.ProjectCode.Value);
-                    ws.Cell(currentRow, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                }
-                if (!string.IsNullOrEmpty(r.Stack))
-                {
-                    ws.Cell(currentRow, 3).SetValue(r.Stack);
-                    ws.Cell(currentRow, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                }
-                if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
-                if (r.AgreedRate.HasValue)
-                {
-                    ws.Cell(currentRow, 6).SetValue(r.AgreedRate.Value);
-                    ws.Cell(currentRow, 6).Style.NumberFormat.Format = numFmt;
-                }
-                if (!string.IsNullOrEmpty(r.HoursDays))
-                {
-                    ws.Cell(currentRow, 7).SetValue(r.HoursDays);
-                    ws.Cell(currentRow, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                }
-
-                // Live formula for Actual Charges (Col H / Col 8, referring to Col F Agreed Rate)
-                if (r.IsIncluded != false)
-                {
-                    if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                    if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
+                    if (r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
                     {
-                        ws.Cell(currentRow, 8).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(F{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(F{currentRow}, 0))";
-                        ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                        ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                        ws.Cell(currentRow, 2).SetValue(r.ProjectCode.Value);
+                        ws.Cell(currentRow, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
-                    else if (r.ActualCharges.HasValue)
+                    if (!string.IsNullOrEmpty(r.Stack))
                     {
-                        ws.Cell(currentRow, 8).FormulaA1 = $"ROUND(F{currentRow}, 0)";
-                        ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                        ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                        ws.Cell(currentRow, 3).SetValue(r.Stack);
+                        ws.Cell(currentRow, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+                    if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
+                    if (r.TotalCost.HasValue)
+                    {
+                        ws.Cell(currentRow, 6).SetValue(r.TotalCost.Value);
+                        ws.Cell(currentRow, 6).Style.NumberFormat.Format = numFmt;
+                    }
+                    if (r.AgreedRate.HasValue)
+                    {
+                        ws.Cell(currentRow, 7).SetValue(r.AgreedRate.Value);
+                        ws.Cell(currentRow, 7).Style.NumberFormat.Format = numFmt;
+                    }
+                    if (!string.IsNullOrEmpty(r.HoursDays))
+                    {
+                        ws.Cell(currentRow, 8).SetValue(r.HoursDays);
+                        ws.Cell(currentRow, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+
+                    if (r.IsIncluded != false)
+                    {
+                        if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                        {
+                            ws.Cell(currentRow, 9).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(G{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(G{currentRow}, 0))";
+                            ws.Cell(currentRow, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                            ws.Cell(currentRow, 9).Style.NumberFormat.Format = numFmt;
+                        }
+                        else if (r.ActualCharges.HasValue)
+                        {
+                            ws.Cell(currentRow, 9).FormulaA1 = $"ROUND(G{currentRow}, 0)";
+                            ws.Cell(currentRow, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                            ws.Cell(currentRow, 9).Style.NumberFormat.Format = numFmt;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(r.SalaryRate))
+                    {
+                        ws.Cell(currentRow, 12).SetValue(r.SalaryRate);
+                        ws.Cell(currentRow, 12).Style.NumberFormat.Format = numFmt;
+                    }
+                    if (!string.IsNullOrEmpty(r.StartEndDate))
+                    {
+                        ws.Cell(currentRow, 13).SetValue(r.StartEndDate);
+                        ws.Cell(currentRow, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+                    if (!string.IsNullOrEmpty(r.ProjStatus))  ws.Cell(currentRow, 14).SetValue(r.ProjStatus);
+                    if (!string.IsNullOrEmpty(r.JobType))     ws.Cell(currentRow, 15).SetValue(r.JobType);
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 16).SetValue(r.ProfileNature);
+                    if (!string.IsNullOrEmpty(r.HandledFrom)) ws.Cell(currentRow, 17).SetValue(r.HandledFrom);
+                }
+                else if (r.RowType == "Detail")
+                {
+                    if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
+                    ApplyOtherChargeFormula(currentRow, r);
+                }
+                else if (r.RowType == "Standalone")
+                {
+                    if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
+                    if (!string.IsNullOrEmpty(r.Stack)) ws.Cell(currentRow, 3).SetValue(r.Stack);
+                    if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
+                    if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
+                    if (r.TotalCost.HasValue)
+                    {
+                        ws.Cell(currentRow, 6).SetValue(r.TotalCost.Value);
+                        ws.Cell(currentRow, 6).Style.NumberFormat.Format = numFmt;
+                    }
+                    ApplyOtherChargeFormula(currentRow, r);
+                    if (!string.IsNullOrEmpty(r.StartEndDate))
+                    {
+                        ws.Cell(currentRow, 13).SetValue(r.StartEndDate);
+                        ws.Cell(currentRow, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
                 }
-
-                if (!string.IsNullOrEmpty(r.SalaryRate))
-                {
-                    ws.Cell(currentRow, 11).SetValue(r.SalaryRate);
-                    ws.Cell(currentRow, 11).Style.NumberFormat.Format = numFmt;
-                }
-                if (!string.IsNullOrEmpty(r.StartEndDate))
-                {
-                    ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
-                    ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                }
-                if (!string.IsNullOrEmpty(r.ProjStatus))  ws.Cell(currentRow, 13).SetValue(r.ProjStatus);
-                if (!string.IsNullOrEmpty(r.JobType))     ws.Cell(currentRow, 14).SetValue(r.JobType);
-                if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 15).SetValue(r.ProfileNature);
-                if (!string.IsNullOrEmpty(r.HandledFrom)) ws.Cell(currentRow, 16).SetValue(r.HandledFrom);
             }
-            else if (r.RowType == "Detail")
+            else
             {
-                if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
-                ApplyOtherChargeFormula(currentRow, r);
-            }
-            else if (r.RowType == "Standalone")
-            {
-                if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
-                if (!string.IsNullOrEmpty(r.Stack)) ws.Cell(currentRow, 3).SetValue(r.Stack);
-                if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
-                if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
-                ApplyOtherChargeFormula(currentRow, r);
-                if (!string.IsNullOrEmpty(r.StartEndDate))
+                if (isHeader)
                 {
-                    ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
-                    ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
+                    if (r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
+                    {
+                        ws.Cell(currentRow, 2).SetValue(r.ProjectCode.Value);
+                        ws.Cell(currentRow, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+                    if (!string.IsNullOrEmpty(r.Stack))
+                    {
+                        ws.Cell(currentRow, 3).SetValue(r.Stack);
+                        ws.Cell(currentRow, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+                    if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
+                    if (r.AgreedRate.HasValue)
+                    {
+                        ws.Cell(currentRow, 6).SetValue(r.AgreedRate.Value);
+                        ws.Cell(currentRow, 6).Style.NumberFormat.Format = numFmt;
+                    }
+                    if (!string.IsNullOrEmpty(r.HoursDays))
+                    {
+                        ws.Cell(currentRow, 7).SetValue(r.HoursDays);
+                        ws.Cell(currentRow, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+
+                    if (r.IsIncluded != false)
+                    {
+                        if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                        {
+                            ws.Cell(currentRow, 8).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(F{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(F{currentRow}, 0))";
+                            ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                            ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                        }
+                        else if (r.ActualCharges.HasValue)
+                        {
+                            ws.Cell(currentRow, 8).FormulaA1 = $"ROUND(F{currentRow}, 0)";
+                            ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
+                            ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(r.SalaryRate))
+                    {
+                        ws.Cell(currentRow, 11).SetValue(r.SalaryRate);
+                        ws.Cell(currentRow, 11).Style.NumberFormat.Format = numFmt;
+                    }
+                    if (!string.IsNullOrEmpty(r.StartEndDate))
+                    {
+                        ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
+                        ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
+                    if (!string.IsNullOrEmpty(r.ProjStatus))  ws.Cell(currentRow, 13).SetValue(r.ProjStatus);
+                    if (!string.IsNullOrEmpty(r.JobType))     ws.Cell(currentRow, 14).SetValue(r.JobType);
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 15).SetValue(r.ProfileNature);
+                    if (!string.IsNullOrEmpty(r.HandledFrom)) ws.Cell(currentRow, 16).SetValue(r.HandledFrom);
+                }
+                else if (r.RowType == "Detail")
+                {
+                    if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
+                    ApplyOtherChargeFormula(currentRow, r);
+                }
+                else if (r.RowType == "Standalone")
+                {
+                    if (!string.IsNullOrEmpty(r.ProfileOwner)) ws.Cell(currentRow, 1).SetValue(r.ProfileOwner);
+                    if (!string.IsNullOrEmpty(r.Stack)) ws.Cell(currentRow, 3).SetValue(r.Stack);
+                    if (!string.IsNullOrEmpty(r.ProjectName))   ws.Cell(currentRow, 4).SetValue(r.ProjectName);
+                    if (!string.IsNullOrEmpty(r.ServiceHead)) ws.Cell(currentRow, 5).SetValue(r.ServiceHead);
+                    ApplyOtherChargeFormula(currentRow, r);
+                    if (!string.IsNullOrEmpty(r.StartEndDate))
+                    {
+                        ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
+                        ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    }
                 }
             }
 
-            // ── Per-row styling (16 columns) ─────────────────────────────────────
-            var rowRange = ws.Range(currentRow, 1, currentRow, 16);
+            // ── Per-row styling ─────────────────────────────────────
+            int totalCols = withTotalCost ? 17 : 16;
+            var rowRange = ws.Range(currentRow, 1, currentRow, totalCols);
 
             foreach (var cell in rowRange.Cells())
             {
@@ -2978,12 +3141,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             if (r.IsToBeDiscussed || r.ToBeDiscussed)
             {
-                // Light red fill for To Be Discussed rows (Priority: red > blue Foreign)
                 rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml("FEE2E2");
             }
             else if (r.IsForeign)
             {
-                // Prominent blue fill for Foreign cases (Branch 5)
                 rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml("9BC2E6");
             }
             else if (isHeader)
@@ -2995,8 +3156,17 @@ public class ProfileInvoicingService : IProfileInvoicingService
         }
 
         int lastDataRow = Math.Max(5, currentRow - 1);
-        c3H.FormulaA1 = $"SUM(H5:H{lastDataRow})";
-        c3I.FormulaA1 = $"SUMIF(J5:J{lastDataRow}, 1, I5:I{lastDataRow})";
+        if (withTotalCost)
+        {
+            ws.Cell(3, 6).FormulaA1 = $"SUM(F5:F{lastDataRow})";
+            ws.Cell(3, 9).FormulaA1 = $"SUM(I5:I{lastDataRow})";
+            ws.Cell(3, 10).FormulaA1 = $"SUMIF(K5:K{lastDataRow}, 1, J5:J{lastDataRow})";
+        }
+        else
+        {
+            ws.Cell(3, 8).FormulaA1 = $"SUM(H5:H{lastDataRow})";
+            ws.Cell(3, 9).FormulaA1 = $"SUMIF(J5:J{lastDataRow}, 1, I5:I{lastDataRow})";
+        }
 
         // Recalculate all formulas so workbook opens with pre-cached evaluated values matching backend
         wb.RecalculateAllFormulas();
@@ -3036,7 +3206,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 pi.project_code,
                 ISNULL(p.Proj_name, '') AS project_name,
                 ISNULL(st.stack_name, '') AS stack_name,
-                ISNULL(p.branch_code, 0) AS branch_code
+                ISNULL(p.branch_code, 0) AS branch_code,
+                ISNULL(pi.total_usd_cost, 0) AS total_usd_cost
             FROM dbo.Profile_invoicing pi
             LEFT OUTER JOIN prof.Profile_Owners po ON po.PrfOwn_code = pi.prfown_code
             LEFT OUTER JOIN prof.Profile_Owners pgo ON pgo.PrfOwn_code = pi.prfgrp_own_code
@@ -3080,7 +3251,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 ProjectName = reader.GetString(16).Trim(),
                 Stack = reader.GetString(17).Trim(),
                 BranchCode = reader.IsDBNull(18) ? 0 : Convert.ToInt32(reader.GetValue(18)),
-                IsForeign = !reader.IsDBNull(18) && Convert.ToInt32(reader.GetValue(18)) == ForeignBranchCode
+                IsForeign = !reader.IsDBNull(18) && Convert.ToInt32(reader.GetValue(18)) == ForeignBranchCode,
+                TotalCost = Convert.ToDecimal(reader.GetValue(19))
             });
         }
 

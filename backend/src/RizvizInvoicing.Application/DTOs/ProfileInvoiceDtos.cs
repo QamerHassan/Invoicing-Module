@@ -267,6 +267,7 @@ public class SendProfileInvoiceEmailRequest
     public bool RememberSettings { get; set; }
     public bool? ProcessedOnly { get; set; }
     public bool ExcludeToBeDiscussed { get; set; } = true;
+    public bool WithTotalCost { get; set; }
     public List<long>? SpecificCodes { get; set; }
 }
 
@@ -288,6 +289,7 @@ public class ProfileInvoiceProcessedRowDto
     public decimal TotalIncomePkr { get; set; }
     public decimal ChargedAmtPkr { get; set; }
     public decimal ChargedAmtUsd { get; set; }
+    public decimal TotalCost { get; set; }
     public int? Ccy { get; set; }
     public string? Status { get; set; }
     public string? InsertBy { get; set; }

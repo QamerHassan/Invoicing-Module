@@ -184,7 +184,7 @@
             generates invoice rows from source tables if not already generated.
             </summary>
         </member>
-        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetExcelDownload(System.Int32,System.String,System.Boolean,System.Boolean,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetExcelDownload(System.Int32,System.String,System.Boolean,System.Boolean,System.Nullable{System.Int32},System.Boolean,System.Threading.CancellationToken)">
             <summary>
             Download real .xlsx workbook matching PB cb_10 layout for saved rows of a Group Owner + Month.
             When processedOnly=true, only processed invoice records (is_processed=1) for the recipient are included.

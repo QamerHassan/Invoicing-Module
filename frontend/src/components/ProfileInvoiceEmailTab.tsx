@@ -131,10 +131,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [cleanMonth]);
 
   useEffect(() => {
-    if (viewMode === 'list') {
-      loadProcessedProfiles();
-    }
-  }, [viewMode, loadProcessedProfiles]);
+    loadProcessedProfiles();
+  }, [cleanMonth, loadProcessedProfiles]);
 
   const filteredProfiles = useMemo(() => {
     const list = processedProfiles.filter(p => {
@@ -171,6 +169,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
 
   const [downloadingExcel, setDownloadingExcel] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
+  const [withTotalCost, setWithTotalCost] = useState<boolean>(false);
 
   const [toEmails, setToEmails] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState<string>('');
@@ -312,20 +311,31 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     const invoiceTotal = activeOwnerProfile
       ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
       : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    const costTotal = activeOwnerProfile
+      ? activeOwnerProfile.totalCost
+      : displayRows.reduce((acc, r: any) => acc + (r.totalCost ?? 0), 0);
 
     setSubject(`Profile Invoice – ${activeOwnerName} – ${monthFormatted}`);
+
+    const summaryLines = withTotalCost
+      ? `Summary:\n` +
+        `• Total Cost: $${Math.round(costTotal).toLocaleString()}\n` +
+        `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
+        `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n`
+      : `Summary:\n` +
+        `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
+        `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n`;
+
     setBody(
       `Dear ${activeOwnerName},\n\n` +
       `Please find attached your ${isSelectedMode ? 'selected' : 'processed'} profile invoice for ${monthFormatted}.\n\n` +
-      `Summary:\n` +
-      `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
-      `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n` +
+      summaryLines +
       `Please review the attached Excel workbook for complete line-item breakdown.\n\n` +
       `Regards,\n` +
       `Rizviz Invoicing Team`
     );
     setFieldErrors({});
-  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile]);
+  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile, withTotalCost]);
 
   const ownerTotals = useMemo(() => {
     // totalInvoice = TOTAL ACTUAL + TOTAL OTHER (matches Excel Sheet banner "TOTAL INVOICE")
@@ -333,7 +343,10 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
       : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
     const count = activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length;
-    return { count, usd };
+    const cost = activeOwnerProfile
+      ? activeOwnerProfile.totalCost
+      : displayRows.reduce((acc, r: any) => acc + (r.totalCost ?? 0), 0);
+    return { count, usd, cost };
   }, [activeOwnerProfile, displayRows]);
 
   const attachmentFilename = ownerCode && cleanMonth
@@ -351,7 +364,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         Number(ownerCode),
         cleanMonth,
         isSelectedMode ? false : true,
-        isSelectedMode ? true : false
+        isSelectedMode ? true : false,
+        withTotalCost
       );
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -430,7 +444,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         body: body.trim(),
         processedOnly: isSelectedMode ? false : true,
         excludeToBeDiscussed: true,
-        specificCodes: isSelectedMode && selectedCodes && selectedCodes.length > 0 ? selectedCodes : undefined
+        specificCodes: isSelectedMode && selectedCodes && selectedCodes.length > 0 ? selectedCodes : undefined,
+        withTotalCost: withTotalCost
       });
 
       if (result.success) {
@@ -1075,30 +1090,57 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               </span>
             </div>
 
-            {/* Quick Preview Button */}
-            {displayRows.length > 0 && (
-              <button
-                onClick={handleReviewAttachment}
-                disabled={downloadingExcel}
-                title="Download Excel containing this owner's processed invoices"
-                style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  color: '#10b981',
-                  borderRadius: '3px',
-                  padding: '1px 7px',
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  cursor: downloadingExcel ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
+            {/* Quick Preview Button & With Total Cost Checkbox */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: withTotalCost ? '#2563eb' : 'var(--text-muted)',
+                background: withTotalCost ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                border: withTotalCost ? '1px solid rgba(37, 99, 235, 0.3)' : '1px solid transparent',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                userSelect: 'none'
+              }}
+              title="Tick to show both Total Cost and Total Invoice in email and Excel attachment"
               >
-                <Download size={10} className={downloadingExcel ? 'spin' : ''} />
-                <span>Review Excel</span>
-              </button>
-            )}
+                <input
+                  type="checkbox"
+                  checked={withTotalCost}
+                  onChange={e => setWithTotalCost(e.target.checked)}
+                  style={{ cursor: 'pointer', accentColor: '#2563eb' }}
+                />
+                <span>With Total Cost</span>
+              </label>
+
+              {displayRows.length > 0 && (
+                <button
+                  onClick={handleReviewAttachment}
+                  disabled={downloadingExcel}
+                  title="Download Excel containing this owner's processed invoices"
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    color: '#10b981',
+                    borderRadius: '3px',
+                    padding: '1px 7px',
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    cursor: downloadingExcel ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  <Download size={10} className={downloadingExcel ? 'spin' : ''} />
+                  <span>Review Excel</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Processed Invoices Table */}
@@ -1150,13 +1192,21 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                   <tr>
                     <th style={{ width: '38px', textAlign: 'center' }}>#</th>
                     <th style={{ textAlign: 'left' }}>Recipient</th>
-                    <th style={{ width: '130px', textAlign: 'right' }}>Total Invoice</th>
+                    {withTotalCost && (
+                      <th style={{ width: '100px', textAlign: 'right', color: 'var(--excel-cost-color, #f59e0b)' }}>Total Cost</th>
+                    )}
+                    <th style={{ width: withTotalCost ? '105px' : '130px', textAlign: 'right' }}>Total Invoice</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>1</td>
                     <td style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeOwnerName || '-'}</td>
+                    {withTotalCost && (
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.88rem', color: 'var(--excel-cost-color, #f59e0b)', whiteSpace: 'nowrap' }}>
+                        {fmtUsd(ownerTotals.cost)}
+                      </td>
+                    )}
                     <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.90rem', color: 'var(--excel-actual-color)', whiteSpace: 'nowrap' }}>
                       ${Math.round(ownerTotals.usd).toLocaleString()}
                     </td>
