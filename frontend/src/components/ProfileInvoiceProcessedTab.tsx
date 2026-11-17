@@ -148,6 +148,9 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
       setSelectedOwnerCodes(new Set());
       await load();
       onRefreshUnprocessed?.();
+      if (count === 1 && selectedList.length === 1) {
+        onViewInExcel?.(selectedList[0].ownerCode, selectedList[0].month || month);
+      }
     } catch (err: any) {
       flashError(err?.message || 'Failed to unprocess selected profiles.');
     } finally {
@@ -169,6 +172,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
       });
       await load();
       onRefreshUnprocessed?.();
+      onViewInExcel?.(p.ownerCode, p.month || month);
     } catch (err: any) {
       flashError(err?.message || 'Failed to unprocess profile.');
     } finally {

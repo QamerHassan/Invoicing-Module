@@ -2367,25 +2367,38 @@ public class ProfileInvoicingService : IProfileInvoicingService
             int? pDays = null;
             int? mDays = null;
             decimal? actualCharges = null;
-            if (curProj > 0 && projectDays.TryGetValue(curProj, out var allDaysList))
+            if (curProj > 0)
             {
-                var jhRows = allDaysList.Where(d => d.ResType == "JH").ToList();
-                var targetDays = jhRows.Count > 0 ? jhRows : allDaysList.Where(d => d.ResType == "SL").ToList();
-
-                int proDays = targetDays.Sum(d => d.ProDays);
-                int monthDays = targetDays.Count > 0 ? targetDays.Max(d => d.MonthDays) : 0;
-
-                if (targetDays.Count > 0 && monthDays > 0)
+                if (projectDays.TryGetValue(curProj, out var allDaysList))
                 {
-                    hoursDays = $"{proDays}/{monthDays}";
-                    pDays = proDays;
-                    mDays = monthDays;
-                    if (curProjRate > 0)
+                    var jhRows = allDaysList.Where(d => d.ResType == "JH").ToList();
+                    var targetDays = jhRows.Count > 0 ? jhRows : allDaysList.Where(d => d.ResType == "SL").ToList();
+
+                    int proDays = targetDays.Sum(d => d.ProDays);
+                    int monthDays = targetDays.Count > 0 ? targetDays.Max(d => d.MonthDays) : 0;
+
+                    if (targetDays.Count > 0 && monthDays > 0)
                     {
-                        decimal act = Math.Round(curProjRate / (decimal)monthDays * (decimal)proDays, 0, MidpointRounding.AwayFromZero);
-                        actualCharges = act;
-                        sumActual += act;
+                        hoursDays = $"{proDays}/{monthDays}";
+                        pDays = proDays;
+                        mDays = monthDays;
+                        if (curProjRate > 0)
+                        {
+                            decimal act = Math.Round(curProjRate / (decimal)monthDays * (decimal)proDays, 0, MidpointRounding.AwayFromZero);
+                            actualCharges = act;
+                            sumActual += act;
+                        }
                     }
+                    else if (curProjRate > 0)
+                    {
+                        actualCharges = curProjRate;
+                        sumActual += curProjRate;
+                    }
+                }
+                else if (curProjRate > 0)
+                {
+                    actualCharges = curProjRate;
+                    sumActual += curProjRate;
                 }
             }
 
@@ -4206,7 +4219,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmd.CommandText = @"
                 SELECT COUNT(*)
                 FROM dbo.Profile_invoicing
-                WHERE prfgrp_own_code = @grp
+                WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
                   AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
             cmd.Parameters.Add(Param("@grp", groupOwnerCode));
             cmd.Parameters.Add(Param("@m", cleanMonth));

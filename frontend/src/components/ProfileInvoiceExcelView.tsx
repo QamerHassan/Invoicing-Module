@@ -568,7 +568,43 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       const numVal = parseFloat(cleanVal);
 
       if (field === 'agreedRate') {
-        targetRow.agreedRate = isNaN(numVal) ? targetRow.agreedRate : numVal;
+        const newAgreed = isNaN(numVal) ? (targetRow.agreedRate || 0) : numVal;
+        targetRow.agreedRate = newAgreed;
+
+        // Change 2: If hrs/days are present, calculate actual = agreed / monthDays * proDays; otherwise actual = agreed
+        let pDays = targetRow.proDays;
+        let mDays = targetRow.monthDays;
+        if ((pDays == null || mDays == null || mDays <= 0) && targetRow.hoursDays) {
+          const parts = targetRow.hoursDays.trim().split('/');
+          if (parts.length === 2) {
+            const p = parseFloat(parts[0]);
+            const m = parseFloat(parts[1]);
+            if (!isNaN(p) && !isNaN(m) && m > 0) {
+              pDays = p;
+              mDays = m;
+            }
+          }
+        }
+
+        let calculatedActual = newAgreed;
+        if (pDays != null && mDays != null && mDays > 0) {
+          calculatedActual = Math.round((newAgreed / mDays) * pDays);
+        }
+        targetRow.actualCharges = calculatedActual;
+      } else if (field === 'hoursDays') {
+        targetRow.hoursDays = value;
+        const parts = (value || '').trim().split('/');
+        if (parts.length === 2) {
+          const p = parseFloat(parts[0]);
+          const m = parseFloat(parts[1]);
+          if (!isNaN(p) && !isNaN(m) && m > 0) {
+            targetRow.proDays = p;
+            targetRow.monthDays = m;
+            if (targetRow.agreedRate != null && targetRow.agreedRate > 0) {
+              targetRow.actualCharges = Math.round((targetRow.agreedRate / m) * p);
+            }
+          }
+        }
       } else if (field === 'actualCharges') {
         targetRow.actualCharges = isNaN(numVal) ? targetRow.actualCharges : numVal;
       } else if (field === 'finalUsd') {
@@ -627,6 +663,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const num = parseFloat(cleanVal);
         if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
         else if (field === 'actualCharges' && !isNaN(num)) req.agreedRate = num;
+        else if (field === 'hoursDays' && value) {
+          const parts = value.trim().split('/');
+          if (parts.length === 2) {
+            const p = parseFloat(parts[0]);
+            const m = parseFloat(parts[1]);
+            if (!isNaN(p) && !isNaN(m) && m > 0) {
+              req.proRateDays = p;
+              req.monthDays = m;
+            }
+          }
+        }
         else if (field === 'projectName') req.projectName = value;
         else if (field === 'salaryRate') req.salaryRate = value;
         else if (field === 'projStatus') req.projStatus = value;
@@ -1018,6 +1065,22 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     const codes = getSelectedCodes();
     if (codes.length === 0) return;
 
+    // Save any pending changes before email/process
+    if (pendingProjectUpdates.size > 0 || pendingRowUpdates.size > 0) {
+      try {
+        for (const [projCode, updateReq] of pendingProjectUpdates.entries()) {
+          await api.updateProfileInvoiceProject(projCode, updateReq);
+        }
+        for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
+          await api.updateProfileInvoiceRow(rowCode, updateReq);
+        }
+        setPendingProjectUpdates(new Map());
+        setPendingRowUpdates(new Map());
+      } catch (saveErr) {
+        console.warn('Pending save before email error:', saveErr);
+      }
+    }
+
     // Move selected rows to Processed (is_processed = 1)
     setProcessingSelected(true);
     try {
@@ -1070,6 +1133,22 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
     const ok = window.confirm(`${codes.length} rows process hongi. Kya aap sure hain?`);
     if (!ok) return;
+
+    // Save any pending changes before process
+    if (pendingProjectUpdates.size > 0 || pendingRowUpdates.size > 0) {
+      try {
+        for (const [projCode, updateReq] of pendingProjectUpdates.entries()) {
+          await api.updateProfileInvoiceProject(projCode, updateReq);
+        }
+        for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
+          await api.updateProfileInvoiceRow(rowCode, updateReq);
+        }
+        setPendingProjectUpdates(new Map());
+        setPendingRowUpdates(new Map());
+      } catch (saveErr) {
+        console.warn('Pending save before process error:', saveErr);
+      }
+    }
 
     setProcessingSelected(true);
     setProcessMsg(null);
