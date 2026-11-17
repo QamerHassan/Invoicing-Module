@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 import { 
   Calculator, 
   CheckCircle, 
@@ -106,6 +107,7 @@ export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
 
   // Filter / Search for bottom grid
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 150);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'P' | 'U'>('ALL');
 
   // Loading states
@@ -285,7 +287,7 @@ export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
   // Filtered invoices for Bottom Grid
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      const q = searchQuery.toLowerCase().trim();
+      const q = debouncedSearch.toLowerCase().trim();
       const matchesSearch = !q ||
         (inv.invoiceNumber?.toLowerCase().includes(q)) ||
         (inv.vendorName?.toLowerCase().includes(q)) ||
@@ -306,7 +308,7 @@ export const CompanyInvoicingView: React.FC<CompanyInvoicingViewProps> = ({
 
       return matchesSearch && matchesStatus;
     });
-  }, [invoices, searchQuery, statusFilter]);
+  }, [invoices, debouncedSearch, statusFilter]);
 
   // Totals
   const hasMissingUsd = filteredInvoices.some(inv => inv.chargedAmtUsd === null && inv.finalUsd === null);

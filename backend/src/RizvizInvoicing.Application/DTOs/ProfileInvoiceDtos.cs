@@ -155,6 +155,7 @@ public class ProfileInvoiceRowUpdateRequest
 public class ProfileInvoiceProjectUpdateRequest
 {
     public decimal? AgreedRate { get; set; }
+    public decimal? ActualCharges { get; set; }
     public int? ProRateDays { get; set; }
     public int? MonthDays { get; set; }
     public string? SalaryRate { get; set; }

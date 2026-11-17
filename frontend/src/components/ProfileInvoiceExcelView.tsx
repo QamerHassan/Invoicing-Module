@@ -172,7 +172,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       return {
         ...r,
         isIncluded: isInc,
-        otherCharge: isInc ? (r.otherCharge != null && r.otherCharge > 0 ? r.otherCharge : headAmount) : null
+        otherCharge: isInc ? (r.otherCharge != null ? r.otherCharge : headAmount) : null
       };
     });
 
@@ -607,12 +607,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         }
       } else if (field === 'actualCharges') {
         targetRow.actualCharges = isNaN(numVal) ? targetRow.actualCharges : numVal;
-      } else if (field === 'finalUsd') {
-        targetRow.finalUsd = isNaN(numVal) ? targetRow.finalUsd : numVal;
       } else if (field === 'otherCharge') {
         targetRow.otherCharge = isNaN(numVal) ? targetRow.otherCharge : numVal;
-      } else if (field === 'totalCost') {
-        targetRow.totalCost = isNaN(numVal) ? targetRow.totalCost : numVal;
       } else if (field === 'serviceHead') {
         targetRow.serviceHead = value;
       } else if (field === 'projectName') {
@@ -662,7 +658,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
         if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
-        else if (field === 'actualCharges' && !isNaN(num)) req.agreedRate = num;
+        else if (field === 'actualCharges' && !isNaN(num)) req.actualCharges = num;
         else if (field === 'hoursDays' && value) {
           const parts = value.trim().split('/');
           if (parts.length === 2) {
@@ -690,11 +686,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         };
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
-        if ((field === 'finalUsd' || field === 'otherCharge' || field === 'actualCharges') && !isNaN(num)) {
+        if (field === 'otherCharge' && !isNaN(num)) {
           req.chargedAmtUsd = num;
-          req.totalCost = num;
-        } else if (field === 'totalCost' && !isNaN(num)) {
-          req.totalCost = num;
         } else if (field === 'serviceHead') {
           req.remarks = value;
         } else if (field === 'salaryRate') {
@@ -1373,10 +1366,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       ) : activeExcelTab === 'email' ? (
         <ProfileInvoiceEmailTab
           groupOwners={postedOwners.length > 0 ? postedOwners : _groupOwners}
-          initialOwnerCode={emailSelectedCodes ? selectedOwnerCode : ""}
+          initialOwnerCode={emailSelectedCodes ? selectedOwnerCode : (selectedOwnerCode || "")}
           initialMonth={cleanMonth}
           selectedCodes={emailSelectedCodes ?? undefined}
           selectedRowsPreview={emailSelectedRows ?? undefined}
+          excelTotalInvoice={data?.totalInvoice}
           onNavigateToUnprocessed={(targetOwner, targetMonth) => {
             if (targetOwner) setSelectedOwnerCode(targetOwner);
             if (targetMonth) setMonthYear(targetMonth);

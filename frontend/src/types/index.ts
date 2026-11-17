@@ -248,6 +248,7 @@ export interface ProfileInvoiceRowUpdateRequest {
 
 export interface ProfileInvoiceProjectUpdateRequest {
   agreedRate?: number | null;
+  actualCharges?: number | null;
   proRateDays?: number | null;
   monthDays?: number | null;
   salaryRate?: string | null;

@@ -124,7 +124,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
 
   // Grand totals
   const totalInvoiceSum = useMemo(() => {
-    return filteredProfiles.reduce((acc, p) => acc + (p.totalInvoice || p.totalCost || 0), 0);
+    return filteredProfiles.reduce((acc, p) => acc + (p.totalInvoice != null ? p.totalInvoice : 0), 0);
   }, [filteredProfiles]);
 
   const totalRowsSum = useMemo(() => {
@@ -428,7 +428,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                         {p.rowsCount} rows
                       </td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
-                        {fmtUsd(p.totalInvoice || p.totalCost)}
+                        {fmtUsd(p.totalInvoice != null ? p.totalInvoice : 0)}
                       </td>
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         {isEmailed ? (

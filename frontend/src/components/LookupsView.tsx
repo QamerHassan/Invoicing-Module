@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 import { 
   Building2, 
   Users, 
@@ -32,6 +34,7 @@ function txt(value: string | null | undefined): React.ReactNode {
 export const LookupsView: React.FC = () => {
   const [subTab, setSubTab] = useState<'vendors' | 'profileOwners' | 'exchangeRates' | 'entities' | 'projects'>('vendors');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 150);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -70,23 +73,23 @@ export const LookupsView: React.FC = () => {
   }, []);
 
   // ── null-safe filtered slices ─────────────────────────────────────────────
-  const filteredVendors = vendors.filter(v =>
-    safeIncludes(v.vendName, search) || safeIncludes(v.shortcode, search)
-  );
-  const filteredProfileOwners = profileOwners.filter(p =>
-    safeIncludes(p.profileName, search) || safeIncludes(p.profileType, search)
-  );
-  const filteredExchangeRates = exchangeRates.filter(er =>
-    safeIncludes(String(er.exchangeRateCode ?? ''), search)
-  );
-  const filteredEntities = entities.filter(e =>
-    safeIncludes(e.fullName, search) ||
-    safeIncludes(e.shortcode, search) ||
-    safeIncludes(String(e.entityCode ?? ''), search)
-  );
-  const filteredProjects = projects.filter(p =>
-    safeIncludes(p.projName, search) || safeIncludes(p.projStatus, search)
-  );
+  const filteredVendors = useMemo(() => vendors.filter(v =>
+    safeIncludes(v.vendName, debouncedSearch) || safeIncludes(v.shortcode, debouncedSearch)
+  ), [vendors, debouncedSearch]);
+  const filteredProfileOwners = useMemo(() => profileOwners.filter(p =>
+    safeIncludes(p.profileName, debouncedSearch) || safeIncludes(p.profileType, debouncedSearch)
+  ), [profileOwners, debouncedSearch]);
+  const filteredExchangeRates = useMemo(() => exchangeRates.filter(er =>
+    safeIncludes(String(er.exchangeRateCode ?? ''), debouncedSearch)
+  ), [exchangeRates, debouncedSearch]);
+  const filteredEntities = useMemo(() => entities.filter(e =>
+    safeIncludes(e.fullName, debouncedSearch) ||
+    safeIncludes(e.shortcode, debouncedSearch) ||
+    safeIncludes(String(e.entityCode ?? ''), debouncedSearch)
+  ), [entities, debouncedSearch]);
+  const filteredProjects = useMemo(() => projects.filter(p =>
+    safeIncludes(p.projName, debouncedSearch) || safeIncludes(p.projStatus, debouncedSearch)
+  ), [projects, debouncedSearch]);
 
   const tabs = [
     { id: 'vendors', label: 'Vendors', count: vendors.length, icon: Building2 },

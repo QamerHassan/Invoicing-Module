@@ -1279,23 +1279,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         decimal newChgPkr = currChgPkr;
         decimal newChgUsd = currChgUsd;
-        decimal? newTotalCost = request.TotalCost;
 
         if (request.ChargedAmtUsd.HasValue)
         {
             decimal val = Math.Round(request.ChargedAmtUsd.Value, 0, MidpointRounding.AwayFromZero);
-            newTotalCost ??= val;
-            decimal share = request.ShareAmount ?? currShare;
-            newChgUsd = val + share;
-            if (newRate > 0)
-            {
-                newChgPkr = Math.Round(newChgUsd * newRate, 2, MidpointRounding.AwayFromZero);
-            }
-        }
-        else if (request.TotalCost.HasValue)
-        {
-            decimal val = Math.Round(request.TotalCost.Value, 0, MidpointRounding.AwayFromZero);
-            newTotalCost = val;
             decimal share = request.ShareAmount ?? currShare;
             newChgUsd = val + share;
             if (newRate > 0)
@@ -1322,11 +1309,11 @@ public class ProfileInvoicingService : IProfileInvoicingService
             {
                 newChgUsd = Math.Round(newChgPkr / newRate, 0, MidpointRounding.AwayFromZero);
             }
-            decimal share = request.ShareAmount ?? currShare;
-            newTotalCost = Math.Max(0, newChgUsd - share);
         }
 
         // 5. Update row in DB within a transaction
+        // NOTE: Total Cost / Total USD (total_usd_cost) is strictly immutable during all Excel Sheet View operations.
+        // It must NEVER be recalculated or overwritten.
         using var tx = await conn.BeginTransactionAsync(ct);
         try
         {
@@ -1343,7 +1330,6 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         exchange_rate = COALESCE(@rate, exchange_rate),
                         arrears = COALESCE(@arrears, arrears),
                         share_amount = COALESCE(@share, share_amount),
-                        total_usd_cost = COALESCE(@cost, total_usd_cost),
                         pro_rate_days = COALESCE(@proDays, pro_rate_days),
                         month_days = COALESCE(@monthDays, month_days),
                         charged_amt_pkr = @chgPkr,
@@ -1361,7 +1347,6 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmd.Parameters.Add(ParamOrNull("@rate", request.ExchangeRate));
                 cmd.Parameters.Add(ParamOrNull("@arrears", request.Arrears));
                 cmd.Parameters.Add(ParamOrNull("@share", request.ShareAmount));
-                cmd.Parameters.Add(ParamOrNull("@cost", newTotalCost));
                 cmd.Parameters.Add(ParamOrNull("@proDays", request.ProRateDays));
                 cmd.Parameters.Add(ParamOrNull("@monthDays", request.MonthDays));
                 cmd.Parameters.Add(Param("@chgPkr", newChgPkr));
@@ -1437,10 +1422,6 @@ public class ProfileInvoicingService : IProfileInvoicingService
             if (request.ShareAmount.HasValue && request.ShareAmount.Value != currShare)
             {
                 auditLogs.Add(("share_amount", currShare.ToString("0.##"), request.ShareAmount.Value.ToString("0.##")));
-            }
-            if (newTotalCost.HasValue && newTotalCost.Value != currCost)
-            {
-                auditLogs.Add(("total_usd_cost", currCost.ToString("0.##"), newTotalCost.Value.ToString("0.##")));
             }
             if (request.Remarks != null && request.Remarks.Trim() != currRemarks.Trim())
             {
@@ -1630,6 +1611,38 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmd.Parameters.Add(Param("@rate", request.AgreedRate.Value));
                 cmd.Parameters.Add(Param("@p", projectCode));
                 await cmd.ExecuteNonQueryAsync(ct);
+
+                // If user changed Agreed Rate without setting a manual Actual, clear any existing manual actual override
+                if (!request.ActualCharges.HasValue)
+                {
+                    using var cmdClear = conn.CreateCommand();
+                    cmdClear.Transaction = (DbTransaction)tx;
+                    cmdClear.CommandText = @"
+                        UPDATE dbo.Profile_invoicing 
+                        SET agreed_charges = NULL
+                        WHERE project_code = @p 
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
+                    cmdClear.Parameters.Add(Param("@p", projectCode));
+                    cmdClear.Parameters.Add(Param("@m", cleanMonth));
+                    await cmdClear.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            // Update Total Actual (J) in existing database field (agreed_charges on dbo.Profile_invoicing)
+            // Strictly isolated from Agreed (H): does NOT modify mkt.Projects.proj_rate, pro_rate_days, total_usd_cost, etc.
+            if (request.ActualCharges.HasValue)
+            {
+                using var cmdActual = conn.CreateCommand();
+                cmdActual.Transaction = (DbTransaction)tx;
+                cmdActual.CommandText = @"
+                    UPDATE dbo.Profile_invoicing 
+                    SET agreed_charges = @actual
+                    WHERE project_code = @p 
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
+                cmdActual.Parameters.Add(Param("@actual", (int)Math.Round(request.ActualCharges.Value, 0, MidpointRounding.AwayFromZero)));
+                cmdActual.Parameters.Add(Param("@p", projectCode));
+                cmdActual.Parameters.Add(Param("@m", cleanMonth));
+                await cmdActual.ExecuteNonQueryAsync(ct);
             }
 
             // Update salary rate if changed
@@ -1762,6 +1775,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
             if (request.AgreedRate.HasValue && request.AgreedRate.Value != currRate)
             {
                 auditLogs.Add(("agreed_rate", currRate.ToString("0.##"), request.AgreedRate.Value.ToString("0.##")));
+            }
+            if (request.ActualCharges.HasValue)
+            {
+                auditLogs.Add(("actual_charges", "", request.ActualCharges.Value.ToString("0.##")));
             }
             if (request.SalaryRate != null && request.SalaryRate != currSalaryRate)
             {
@@ -2030,6 +2047,31 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 string sRate = reader.IsDBNull(8) ? "" : reader.GetString(8).Trim();
                 int bCode = reader.IsDBNull(9) ? 0 : reader.GetInt32(9);
                 projects[pCode] = (pName, jobType, rate, pType, sCode, oDate, cDate, sRate, bCode);
+            }
+        }
+
+        // Lookups for manual Total Actual overrides saved in dbo.Profile_invoicing.agreed_charges
+        var manualActualOverrides = new Dictionary<int, decimal>();
+        if (projectCodes.Count > 0)
+        {
+            using var cmdAct = conn.CreateCommand();
+            cmdAct.CommandText = $@"
+                SELECT project_code, MAX(agreed_charges)
+                FROM dbo.Profile_invoicing
+                WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
+                  AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                  AND project_code IN ({string.Join(",", projectCodes)})
+                  AND agreed_charges IS NOT NULL
+                GROUP BY project_code";
+            cmdAct.Parameters.Add(Param("@grp", effectiveGroupCode));
+            cmdAct.Parameters.Add(Param("@m", cleanMonth));
+            using var rdrAct = await cmdAct.ExecuteReaderAsync(ct);
+            while (await rdrAct.ReadAsync(ct))
+            {
+                if (!rdrAct.IsDBNull(0) && !rdrAct.IsDBNull(1))
+                {
+                    manualActualOverrides[rdrAct.GetInt32(0)] = Convert.ToDecimal(rdrAct.GetValue(1));
+                }
             }
         }
 
@@ -2386,19 +2428,28 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         {
                             decimal act = Math.Round(curProjRate / (decimal)monthDays * (decimal)proDays, 0, MidpointRounding.AwayFromZero);
                             actualCharges = act;
-                            sumActual += act;
                         }
                     }
                     else if (curProjRate > 0)
                     {
                         actualCharges = curProjRate;
-                        sumActual += curProjRate;
                     }
                 }
                 else if (curProjRate > 0)
                 {
                     actualCharges = curProjRate;
-                    sumActual += curProjRate;
+                }
+
+                // If manual Total Actual override exists in dbo.Profile_invoicing.agreed_charges, use it!
+                // This isolates Total Actual (J) completely: Agreed (H) and Hrs/Dys (I) remain intact.
+                if (manualActualOverrides.TryGetValue(curProj, out var manAct))
+                {
+                    actualCharges = manAct;
+                }
+
+                if (actualCharges.HasValue)
+                {
+                    sumActual += actualCharges.Value;
                 }
             }
 
@@ -2575,9 +2626,13 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 bool rowInc = dRow.IsIncluded;
                 bool isRowOther = (isOther || isDefaultUncheckedHead) && rowInc;
 
+                decimal rowOtherAmt = dRow.ChargedAmtUsd.HasValue
+                    ? Math.Round(Math.Max(0, dRow.ChargedAmtUsd.Value - (dRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
+                    : finalUsd;
+
                 if (isRowOther && rowInc)
                 {
-                    sumOther += finalUsd;
+                    sumOther += rowOtherAmt;
                 }
 
                 if (curProj > 0)
@@ -2593,7 +2648,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
-                        OtherCharge = isRowOther ? finalUsd : null,
+                        OtherCharge = isRowOther ? rowOtherAmt : null,
                         ChargedAmtPkr = isRowOther ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = isRowOther ? dRow.ExchangeRate : null,
                         ShareAmount = isRowOther ? dRow.ShareAmount : null,
@@ -2635,6 +2690,15 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 }
                 else
                 {
+                    decimal standaloneOtherAmt = dRow.ChargedAmtUsd.HasValue
+                        ? Math.Round(Math.Max(0, dRow.ChargedAmtUsd.Value - (dRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
+                        : finalUsd;
+
+                    if (isOther && dRow.IsIncluded)
+                    {
+                        sumOther += standaloneOtherAmt;
+                    }
+
                     // Standalone row (curProj == 0)
                     // KAAM 1 Rule 4: Total Cost / Total USD par IsIncluded ka koi asar NA ho
                     sumCost += finalUsd;
@@ -2652,7 +2716,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
                         TotalCost = finalUsd,
-                        OtherCharge = (isOther && dRow.IsIncluded) ? finalUsd : null,
+                        OtherCharge = (isOther && dRow.IsIncluded) ? standaloneOtherAmt : null,
                         ChargedAmtPkr = (isOther && dRow.IsIncluded) ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = (isOther && dRow.IsIncluded) ? dRow.ExchangeRate : null,
                         ShareAmount = (isOther && dRow.IsIncluded) ? dRow.ShareAmount : null,

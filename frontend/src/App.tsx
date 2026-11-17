@@ -1,16 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { api } from './api/client';
 import { Navbar } from './components/Navbar';
 import { Login } from './components/Login';
-import { DashboardView } from './components/DashboardView';
-import { CompanyInvoicingView } from './components/CompanyInvoicingView';
-import { AdvanceFundsView } from './components/AdvanceFundsView';
-import { FinalInvoiceView } from './components/FinalInvoiceView';
-import { LookupsView } from './components/LookupsView';
-import { ProfileInvoicingView } from './components/ProfileInvoicingView';
 import type { UserInfo } from './types';
 import { ThemeProvider } from './context/ThemeContext';
 import { MonthProvider, useMonth } from './context/MonthContext';
+import { RefreshCw } from 'lucide-react';
+
+// ── Lazy-load heavy views — each becomes its own async chunk ──
+const DashboardView        = lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const CompanyInvoicingView = lazy(() => import('./components/CompanyInvoicingView').then(m => ({ default: m.CompanyInvoicingView })));
+const AdvanceFundsView     = lazy(() => import('./components/AdvanceFundsView').then(m => ({ default: m.AdvanceFundsView })));
+const FinalInvoiceView     = lazy(() => import('./components/FinalInvoiceView').then(m => ({ default: m.FinalInvoiceView })));
+const LookupsView          = lazy(() => import('./components/LookupsView').then(m => ({ default: m.LookupsView })));
+const ProfileInvoicingView = lazy(() => import('./components/ProfileInvoicingView').then(m => ({ default: m.ProfileInvoicingView })));
+
+const ViewLoader: React.FC = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', gap: '0.75rem', color: 'var(--text-muted)' }}>
+    <RefreshCw size={22} className="animate-spin" color="var(--accent-primary)" />
+    <span style={{ fontSize: '0.9rem' }}>Loading...</span>
+  </div>
+);
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -147,49 +157,51 @@ const AppContent: React.FC = () => {
             ? { display: 'flex', flexDirection: 'column', overflow: 'hidden' }
             : { overflowY: 'auto' })
         }}>
-          {currentTab === 'dashboard' && (
-            <DashboardView onSelectMonth={handleSelectMonthFromDashboard} />
-          )}
+          <Suspense fallback={<ViewLoader />}>
+            {currentTab === 'dashboard' && (
+              <DashboardView onSelectMonth={handleSelectMonthFromDashboard} />
+            )}
 
-          {currentTab === 'company-invoices' && (
-            <CompanyInvoicingView
-              initialMonth={selectedMonth}
-              onMonthChange={(m) => setSelectedMonth(m)}
-              onNavigateToUnprocessed={(month: string) => {
-                setSelectedMonth(month);
-                setCurrentTab('profile-invoicing');
-                setProfileInvoicingNavigateTo({ subTab: 'excel', excelTab: 'unprocessed', month });
-              }}
-            />
-          )}
+            {currentTab === 'company-invoices' && (
+              <CompanyInvoicingView
+                initialMonth={selectedMonth}
+                onMonthChange={(m) => setSelectedMonth(m)}
+                onNavigateToUnprocessed={(month: string) => {
+                  setSelectedMonth(month);
+                  setCurrentTab('profile-invoicing');
+                  setProfileInvoicingNavigateTo({ subTab: 'excel', excelTab: 'unprocessed', month });
+                }}
+              />
+            )}
 
-          {currentTab === 'profile-invoicing' && (
-            <ProfileInvoicingView
-              user={user}
-              initialMonth={selectedMonth}
-              onMonthChange={(m) => setSelectedMonth(m)}
-              navigateTo={profileInvoicingNavigateTo}
-              onNavigateDone={() => setProfileInvoicingNavigateTo(null)}
-            />
-          )}
+            {currentTab === 'profile-invoicing' && (
+              <ProfileInvoicingView
+                user={user}
+                initialMonth={selectedMonth}
+                onMonthChange={(m) => setSelectedMonth(m)}
+                navigateTo={profileInvoicingNavigateTo}
+                onNavigateDone={() => setProfileInvoicingNavigateTo(null)}
+              />
+            )}
 
-          {currentTab === 'advance-funds' && (
-            <AdvanceFundsView
-              initialMonth={selectedMonth}
-              onMonthChange={(m) => setSelectedMonth(m)}
-            />
-          )}
+            {currentTab === 'advance-funds' && (
+              <AdvanceFundsView
+                initialMonth={selectedMonth}
+                onMonthChange={(m) => setSelectedMonth(m)}
+              />
+            )}
 
-          {currentTab === 'final-invoices' && (
-            <FinalInvoiceView
-              initialMonth={selectedMonth}
-              onMonthChange={(m) => setSelectedMonth(m)}
-            />
-          )}
+            {currentTab === 'final-invoices' && (
+              <FinalInvoiceView
+                initialMonth={selectedMonth}
+                onMonthChange={(m) => setSelectedMonth(m)}
+              />
+            )}
 
-          {currentTab === 'lookups' && (
-            <LookupsView />
-          )}
+            {currentTab === 'lookups' && (
+              <LookupsView />
+            )}
+          </Suspense>
         </main>
       </ErrorBoundary>
 

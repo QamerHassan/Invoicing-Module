@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 import {
   Send,
   AlertTriangle,
@@ -27,6 +28,7 @@ interface ProfileInvoiceEmailTabProps {
   onMonthChange?: (month: string) => void;
   selectedCodes?: number[];
   selectedRowsPreview?: any[];
+  excelTotalInvoice?: number;
 }
 
 function parseEmailList(input: string): string[] {
@@ -62,7 +64,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   onOwnerChange,
   onMonthChange,
   selectedCodes,
-  selectedRowsPreview
+  selectedRowsPreview,
+  excelTotalInvoice
 }) => {
   const [month, setMonth] = useState<string>(
     (initialMonth || 'OCT26').replace('-', '').toUpperCase()
@@ -98,6 +101,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   const [loadingProfiles, setLoadingProfiles] = useState<boolean>(false);
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>('');
+  const debouncedSearch = useDebounce(search, 150);
 
   // Persisted emailed status map per month
   const getEmailedOwnersMap = useCallback((): Record<string, { emailedAt: string; toEmail?: string }> => {
@@ -136,8 +140,8 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
 
   const filteredProfiles = useMemo(() => {
     const list = processedProfiles.filter(p => {
-      if (!search.trim()) return true;
-      const q = search.trim().toLowerCase();
+      if (!debouncedSearch.trim()) return true;
+      const q = debouncedSearch.trim().toLowerCase();
       const words = q.split(/\s+/).filter(Boolean);
       const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
       return words.every(w => text.includes(w));
@@ -152,7 +156,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       }
       return (a.ownerName || '').localeCompare(b.ownerName || '');
     });
-  }, [processedProfiles, search, emailedOwners]);
+  }, [processedProfiles, debouncedSearch, emailedOwners]);
 
   // ─── COMPOSE VIEW STATE ─────────────────────────────────────────────
   const [processedRows, setProcessedRows] = useState<ProfileInvoiceProcessedRowDto[]>([]);
@@ -308,10 +312,13 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     setShowBcc(false);
 
     const monthFormatted = formatMonthDisplay(cleanMonth);
-    const invoiceTotal = activeOwnerProfile
-      ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
-      : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
-    const costTotal = activeOwnerProfile
+    const isCurrentExcelOwner = !ownerCode || ownerCode === initialOwnerCode;
+    const invoiceTotal = (isCurrentExcelOwner && excelTotalInvoice !== undefined)
+      ? excelTotalInvoice
+      : (activeOwnerProfile?.totalInvoice != null
+          ? activeOwnerProfile.totalInvoice
+          : (excelTotalInvoice !== undefined ? excelTotalInvoice : 0));
+    const costTotal = activeOwnerProfile?.totalCost != null
       ? activeOwnerProfile.totalCost
       : displayRows.reduce((acc, r: any) => acc + (r.totalCost ?? 0), 0);
 
@@ -335,19 +342,22 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       `Rizviz Invoicing Team`
     );
     setFieldErrors({});
-  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile, withTotalCost]);
+  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile, withTotalCost, excelTotalInvoice, initialOwnerCode]);
 
   const ownerTotals = useMemo(() => {
-    // totalInvoice = TOTAL ACTUAL + TOTAL OTHER (matches Excel Sheet banner "TOTAL INVOICE")
-    const usd = activeOwnerProfile
-      ? (activeOwnerProfile.totalInvoice || activeOwnerProfile.totalCost)
-      : displayRows.reduce((acc, r: any) => acc + (r.chargedAmtUsd ?? r.finalUsd ?? r.totalCost ?? 0), 0);
+    // Total Invoice from Excel Sheet View as single source of truth
+    const isCurrentExcelOwner = !ownerCode || ownerCode === initialOwnerCode;
+    const usd = (isCurrentExcelOwner && excelTotalInvoice !== undefined)
+      ? excelTotalInvoice
+      : (activeOwnerProfile?.totalInvoice != null
+          ? activeOwnerProfile.totalInvoice
+          : (excelTotalInvoice !== undefined ? excelTotalInvoice : 0));
     const count = activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length;
-    const cost = activeOwnerProfile
+    const cost = activeOwnerProfile?.totalCost != null
       ? activeOwnerProfile.totalCost
       : displayRows.reduce((acc, r: any) => acc + (r.totalCost ?? 0), 0);
     return { count, usd, cost };
-  }, [activeOwnerProfile, displayRows]);
+  }, [activeOwnerProfile, displayRows, excelTotalInvoice, ownerCode, initialOwnerCode]);
 
   const attachmentFilename = ownerCode && cleanMonth
     ? (isSelectedMode
@@ -692,7 +702,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                         </td>
                         <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
-                          {fmtUsd(p.totalInvoice || p.totalCost)}
+                          {fmtUsd(p.totalInvoice != null ? p.totalInvoice : 0)}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {isEmailed ? (
@@ -1050,14 +1060,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       )}
 
       {/* ─── Main 2-Panel Content Layout ─── */}
-      <div style={{
-        flex: 1,
-        minHeight: 0,
-        display: 'grid',
-        gridTemplateColumns: 'minmax(380px, 1.15fr) minmax(380px, 1.25fr)',
-        gap: '8px',
-        overflow: 'hidden'
-      }}>
+      <div className="email-compose-grid">
 
         {/* ═════════ LEFT PANE: Selected Owner's Processed Invoices Table ═════════ */}
         <div style={{
