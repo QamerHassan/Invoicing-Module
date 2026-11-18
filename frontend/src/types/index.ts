@@ -163,6 +163,8 @@ export interface ProfileInvoiceRowDto {
   interviewSeqCode?: number | null;
   monthDays?: number | null;
   proRateDays?: number | null;
+  appliedCharges?: number | null;
+  actualCharges?: number | null;
   source: string;
   serviceHeadName?: string | null;
   isIncluded?: boolean;
@@ -239,6 +241,8 @@ export interface ProfileInvoiceRowUpdateRequest {
   isIncluded?: boolean | null;
   totalCost?: number | null;
   agreedRate?: number | null;
+  appliedCharges?: number | null;
+  actualCharges?: number | null;
   proRateDays?: number | null;
   monthDays?: number | null;
   salaryRate?: string | null;
@@ -248,6 +252,7 @@ export interface ProfileInvoiceRowUpdateRequest {
 
 export interface ProfileInvoiceProjectUpdateRequest {
   agreedRate?: number | null;
+  appliedCharges?: number | null;
   actualCharges?: number | null;
   proRateDays?: number | null;
   monthDays?: number | null;
@@ -294,6 +299,7 @@ export interface ProfileInvoiceExcelViewRowDto {
   chargedAmtUsd?: number | null;
   totalCost?: number | null;
   agreedRate?: number | null;
+  appliedCharges?: number | null;
   hoursDays?: string | null;
   proDays?: number | null;
   monthDays?: number | null;

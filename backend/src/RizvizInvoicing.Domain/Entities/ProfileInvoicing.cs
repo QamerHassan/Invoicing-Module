@@ -45,4 +45,6 @@ public class ProfileInvoicing
     public string? DiscussMarkedBy { get; set; }
     public DateTime? DiscussMarkedTime { get; set; }
     public bool IsProcessed { get; set; } = false;
+    public int? AppliedCharges { get; set; }
+    public int? ActualCharges { get; set; }
 }

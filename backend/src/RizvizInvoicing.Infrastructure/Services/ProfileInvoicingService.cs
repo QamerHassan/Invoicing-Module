@@ -608,6 +608,24 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
 
             // ── Step 4: Insert all rows, obtaining a fresh PCOM code per row ──
+            var prjCodes = dryRun.Rows
+                .Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
+                .Select(r => r.ProjectCode!.Value)
+                .Distinct()
+                .ToList();
+            var prjRates = new Dictionary<int, decimal>();
+            if (prjCodes.Count > 0)
+            {
+                using var cmdRate = conn.CreateCommand();
+                cmdRate.Transaction = tx;
+                cmdRate.CommandText = $"SELECT project_code, ISNULL(proj_rate, 0) FROM mkt.Projects WHERE project_code IN ({string.Join(",", prjCodes)})";
+                using var rdrRate = await cmdRate.ExecuteReaderAsync(ct);
+                while (await rdrRate.ReadAsync(ct))
+                {
+                    prjRates[rdrRate.GetInt32(0)] = Convert.ToDecimal(rdrRate.GetValue(1));
+                }
+            }
+
             var now = DateTime.UtcNow;
             var savedRows = new List<ProfileInvoiceSavedRowDto>(dryRun.Rows.Count);
             long firstPcom = 0, lastPcom = 0;
@@ -631,6 +649,15 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 if (firstPcom == 0) firstPcom = pcomCode;
                 lastPcom = pcomCode;
 
+                int? initialApplied = null;
+                int? initialActual = null;
+                if (string.Equals(row.ResourceType, "JH", StringComparison.OrdinalIgnoreCase) &&
+                    row.ProjectCode.HasValue && prjRates.TryGetValue(row.ProjectCode.Value, out var pRate) && pRate > 0)
+                {
+                    initialApplied = (int)Math.Round(pRate);
+                    initialActual = (int)Math.Round(pRate);
+                }
+
                 using var insert = conn.CreateCommand();
                 insert.Transaction = tx;
                 insert.CommandText = @"
@@ -646,7 +673,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         invoice_number, exchange_rate, charg_type_code,
                         support_status, interview_code, interview_seq_code,
                         month_days, pro_rate_days, is_included,
-                        to_be_discussed, is_processed
+                        to_be_discussed, is_processed,
+                        applied_charges, actual_charges
                     )
                     VALUES
                     (
@@ -660,7 +688,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         @invNum, @exRate, @chgType,
                         @suppSts, @intCode, @intSeq,
                         @monthDays, @proRateDays, @isIncluded,
-                        0, 0
+                        0, 0,
+                        @appliedCharges, @actualCharges
                     )";
 
                 insert.Parameters.Add(Param("@pcom",       pcomCode));
@@ -696,6 +725,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 insert.Parameters.Add(ParamOrNull("@monthDays",   row.MonthDays));
                 insert.Parameters.Add(ParamOrNull("@proRateDays", row.ProRateDays));
                 insert.Parameters.Add(Param("@isIncluded",        row.IsIncluded ? 1 : 0));
+                insert.Parameters.Add(ParamOrNull("@appliedCharges", initialApplied));
+                insert.Parameters.Add(ParamOrNull("@actualCharges",  initialActual));
 
                 await insert.ExecuteNonQueryAsync(ct);
 
@@ -1335,6 +1366,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         charged_amt_pkr = @chgPkr,
                         charged_amt_usd = @chgUsd,
                         is_included = COALESCE(@isInc, is_included),
+                        applied_charges = COALESCE(@appliedCharges, applied_charges),
+                        actual_charges = COALESCE(@actualCharges, actual_charges),
                         last_modified_by = @user,
                         last_modified_time = GETDATE()
                     WHERE cmp_prof_invoice_code = @code";
@@ -1352,6 +1385,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmd.Parameters.Add(Param("@chgPkr", newChgPkr));
                 cmd.Parameters.Add(Param("@chgUsd", newChgUsd));
                 cmd.Parameters.Add(ParamOrNull("@isInc", request.IsIncluded));
+                cmd.Parameters.Add(ParamOrNull("@appliedCharges", request.AppliedCharges.HasValue ? (int)Math.Round(request.AppliedCharges.Value) : (int?)null));
+                cmd.Parameters.Add(ParamOrNull("@actualCharges", request.ActualCharges.HasValue ? (int)Math.Round(request.ActualCharges.Value) : (int?)null));
                 cmd.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
                 cmd.Parameters.Add(Param("@code", cmpProfInvoiceCode));
 
@@ -1600,6 +1635,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
         try
         {
             // Update mkt.Projects if rate changed (matches PowerBuilder: UPDATE mkt.Projects SET proj_rate = :data WHERE project_code = :project_code)
+            // Agreed Rate has ZERO effect on applied or actual charges in dbo.Profile_invoicing
             if (request.AgreedRate.HasValue)
             {
                 using var cmd = conn.CreateCommand();
@@ -1611,35 +1647,96 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmd.Parameters.Add(Param("@rate", request.AgreedRate.Value));
                 cmd.Parameters.Add(Param("@p", projectCode));
                 await cmd.ExecuteNonQueryAsync(ct);
-
-                // If user changed Agreed Rate without setting a manual Actual, clear any existing manual actual override
-                if (!request.ActualCharges.HasValue)
-                {
-                    using var cmdClear = conn.CreateCommand();
-                    cmdClear.Transaction = (DbTransaction)tx;
-                    cmdClear.CommandText = @"
-                        UPDATE dbo.Profile_invoicing 
-                        SET agreed_charges = NULL
-                        WHERE project_code = @p 
-                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
-                    cmdClear.Parameters.Add(Param("@p", projectCode));
-                    cmdClear.Parameters.Add(Param("@m", cleanMonth));
-                    await cmdClear.ExecuteNonQueryAsync(ct);
-                }
             }
 
-            // Update Total Actual (J) in existing database field (agreed_charges on dbo.Profile_invoicing)
-            // Strictly isolated from Agreed (H): does NOT modify mkt.Projects.proj_rate, pro_rate_days, total_usd_cost, etc.
-            if (request.ActualCharges.HasValue)
+            // Update Applied Charges in applied_charges on dbo.Profile_invoicing
+            // Rule: ONLY save on the Job Holder (resource_type = 'JH') row of that project!
+            // When applied charges change, actual charges in the JH row also gets the exact same value.
+            if (request.AppliedCharges.HasValue)
+            {
+                using var cmdApplied = conn.CreateCommand();
+                cmdApplied.Transaction = (DbTransaction)tx;
+                cmdApplied.CommandText = @"
+                    -- 1. Update the Job Holder row
+                    UPDATE dbo.Profile_invoicing 
+                    SET applied_charges = @applied,
+                        actual_charges = @actual,
+                        last_modified_by = @user,
+                        last_modified_time = GETDATE()
+                    WHERE project_code = @p 
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                      AND resource_type = 'JH';
+
+                    -- 1b. Fallback: if no JH row exists, update the primary row
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        UPDATE dbo.Profile_invoicing 
+                        SET applied_charges = @applied,
+                            actual_charges = @actual,
+                            last_modified_by = @user,
+                            last_modified_time = GETDATE()
+                        WHERE cmp_prof_invoice_code = (
+                            SELECT TOP 1 cmp_prof_invoice_code 
+                            FROM dbo.Profile_invoicing 
+                            WHERE project_code = @p 
+                              AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                            ORDER BY CASE WHEN resource_type = 'SL' THEN 1 ELSE 2 END, cmp_prof_invoice_code
+                        );
+                    END
+
+                    -- 2. Ensure non-JH rows do NOT keep applied_charges or actual_charges
+                    UPDATE dbo.Profile_invoicing
+                    SET applied_charges = NULL,
+                        actual_charges = NULL
+                    WHERE project_code = @p 
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                      AND resource_type <> 'JH';";
+
+                int appVal = (int)Math.Round(request.AppliedCharges.Value, 0, MidpointRounding.AwayFromZero);
+                int actVal = request.ActualCharges.HasValue ? (int)Math.Round(request.ActualCharges.Value, 0, MidpointRounding.AwayFromZero) : appVal;
+                cmdApplied.Parameters.Add(Param("@applied", appVal));
+                cmdApplied.Parameters.Add(Param("@actual", actVal));
+                cmdApplied.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
+                cmdApplied.Parameters.Add(Param("@p", projectCode));
+                cmdApplied.Parameters.Add(Param("@m", cleanMonth));
+                await cmdApplied.ExecuteNonQueryAsync(ct);
+            }
+            else if (request.ActualCharges.HasValue)
             {
                 using var cmdActual = conn.CreateCommand();
                 cmdActual.Transaction = (DbTransaction)tx;
                 cmdActual.CommandText = @"
                     UPDATE dbo.Profile_invoicing 
-                    SET agreed_charges = @actual
+                    SET actual_charges = @actual,
+                        last_modified_by = @user,
+                        last_modified_time = GETDATE()
                     WHERE project_code = @p 
-                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                      AND resource_type = 'JH';
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        UPDATE dbo.Profile_invoicing 
+                        SET actual_charges = @actual,
+                            last_modified_by = @user,
+                            last_modified_time = GETDATE()
+                        WHERE cmp_prof_invoice_code = (
+                            SELECT TOP 1 cmp_prof_invoice_code 
+                            FROM dbo.Profile_invoicing 
+                            WHERE project_code = @p 
+                              AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                            ORDER BY CASE WHEN resource_type = 'SL' THEN 1 ELSE 2 END, cmp_prof_invoice_code
+                        );
+                    END
+
+                    UPDATE dbo.Profile_invoicing
+                    SET actual_charges = NULL
+                    WHERE project_code = @p 
+                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                      AND resource_type <> 'JH';";
+
                 cmdActual.Parameters.Add(Param("@actual", (int)Math.Round(request.ActualCharges.Value, 0, MidpointRounding.AwayFromZero)));
+                cmdActual.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
                 cmdActual.Parameters.Add(Param("@p", projectCode));
                 cmdActual.Parameters.Add(Param("@m", cleanMonth));
                 await cmdActual.ExecuteNonQueryAsync(ct);
@@ -1943,7 +2040,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         // 2. Fetch saved rows from dbo.Profile_invoicing
         // Sorted: prfown_code A, project_code A, interview_code A, charg_type_code A
-        var savedRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
+        var savedRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode, decimal? AppliedCharges, decimal? ActualCharges)>();
         using (var cmd = conn.CreateCommand())
         {
             string ownerFilter;
@@ -1967,7 +2064,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
                        pi.charged_amt_pkr, pi.exchange_rate, pi.share_amount,
                        ISNULL(pi.to_be_discussed, 0) AS to_be_discussed,
                        ISNULL(pi.is_processed, 0) AS is_processed,
-                       pi.shortcode
+                       pi.shortcode,
+                       pi.applied_charges,
+                       pi.actual_charges
                 FROM dbo.Profile_invoicing pi
                 LEFT JOIN mkt.Projects p ON p.project_code = pi.project_code
                 LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pi.prfown_code
@@ -2003,7 +2102,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     reader.IsDBNull(13) ? null : reader.GetDecimal(13),
                     Convert.ToBoolean(reader.GetValue(14)),
                     Convert.ToBoolean(reader.GetValue(15)),
-                    reader.IsDBNull(16) ? null : reader.GetString(16).Trim()
+                    reader.IsDBNull(16) ? null : reader.GetString(16).Trim(),
+                    reader.IsDBNull(17) ? null : (decimal?)Convert.ToDecimal(reader.GetValue(17)),
+                    reader.IsDBNull(18) ? null : (decimal?)Convert.ToDecimal(reader.GetValue(18))
                 ));
             }
         }
@@ -2050,27 +2151,38 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
-        // Lookups for manual Total Actual overrides saved in dbo.Profile_invoicing.agreed_charges
+        // Lookups for manual Total Actual and Applied overrides saved in dbo.Profile_invoicing
+        // Specifically from the Job Holder (resource_type = 'JH') row!
         var manualActualOverrides = new Dictionary<int, decimal>();
+        var manualAppliedOverrides = new Dictionary<int, decimal>();
         if (projectCodes.Count > 0)
         {
             using var cmdAct = conn.CreateCommand();
             cmdAct.CommandText = $@"
-                SELECT project_code, MAX(agreed_charges)
+                SELECT project_code, actual_charges, applied_charges, resource_type
                 FROM dbo.Profile_invoicing
                 WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
                   AND REPLACE(RTRIM(invoice_month), '-', '') = @m
                   AND project_code IN ({string.Join(",", projectCodes)})
-                  AND agreed_charges IS NOT NULL
-                GROUP BY project_code";
+                  AND (actual_charges IS NOT NULL OR applied_charges IS NOT NULL)
+                ORDER BY project_code, CASE WHEN resource_type = 'JH' THEN 1 WHEN resource_type = 'SL' THEN 2 ELSE 3 END";
             cmdAct.Parameters.Add(Param("@grp", effectiveGroupCode));
             cmdAct.Parameters.Add(Param("@m", cleanMonth));
             using var rdrAct = await cmdAct.ExecuteReaderAsync(ct);
             while (await rdrAct.ReadAsync(ct))
             {
-                if (!rdrAct.IsDBNull(0) && !rdrAct.IsDBNull(1))
+                if (!rdrAct.IsDBNull(0))
                 {
-                    manualActualOverrides[rdrAct.GetInt32(0)] = Convert.ToDecimal(rdrAct.GetValue(1));
+                    int pCode = rdrAct.GetInt32(0);
+                    // Prioritize JH row because of ORDER BY
+                    if (!manualActualOverrides.ContainsKey(pCode) && !rdrAct.IsDBNull(1))
+                    {
+                        manualActualOverrides[pCode] = Convert.ToDecimal(rdrAct.GetValue(1));
+                    }
+                    if (!manualAppliedOverrides.ContainsKey(pCode) && !rdrAct.IsDBNull(2))
+                    {
+                        manualAppliedOverrides[pCode] = Convert.ToDecimal(rdrAct.GetValue(2));
+                    }
                 }
             }
         }
@@ -2209,7 +2321,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             string ProjName,
             string ProfileOwner,
             string StartEndDate,
-            List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)> Rows
+            List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode, decimal? AppliedCharges, decimal? ActualCharges)> Rows
         )>();
 
         int curIdx = 0;
@@ -2221,7 +2333,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             int curProj = curRow.ProjectCode ?? 0;
             int curInt = curRow.InterviewCode ?? 0;
 
-            var blockRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
+            var blockRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode, decimal? AppliedCharges, decimal? ActualCharges)>();
             int endIdx = curIdx;
             for (int k = curIdx; k < totalSavedCount; k++)
             {
@@ -2294,7 +2406,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             // Rizviz Share: project_code > 0 par JH rows ka sum(share_amount) (JH na ho to SL)
             decimal projShare = 0;
             bool isRizvizShareInc = false;
-            var targetShareRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode)>();
+            var targetShareRows = new List<(long Code, int? PrfownCode, int? ProjectCode, int? InterviewCode, int? ChargTypeCode, decimal? ChargedAmtUsd, decimal? TotalUsdCost, string? ResourceType, int InvoiceTo, bool IsIncluded, bool IsExecutive, decimal? ChargedAmtPkr, decimal? ExchangeRate, decimal? ShareAmount, bool ToBeDiscussed, bool IsProcessed, string? Shortcode, decimal? AppliedCharges, decimal? ActualCharges)>();
             if (curProj > 0)
             {
                 var jhRows = block.Rows.Where(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -2409,6 +2521,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             int? pDays = null;
             int? mDays = null;
             decimal? actualCharges = null;
+            decimal? projectApplied = null;
             if (curProj > 0)
             {
                 if (projectDays.TryGetValue(curProj, out var allDaysList))
@@ -2440,11 +2553,23 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     actualCharges = curProjRate;
                 }
 
-                // If manual Total Actual override exists in dbo.Profile_invoicing.agreed_charges, use it!
-                // This isolates Total Actual (J) completely: Agreed (H) and Hrs/Dys (I) remain intact.
-                if (manualActualOverrides.TryGetValue(curProj, out var manAct))
+                // Point 2 Rule:
+                // Check if this project already has saved applied/actual in dbo.Profile_invoicing
+                bool hasSavedApplied = manualAppliedOverrides.TryGetValue(curProj, out var manApp);
+                bool hasSavedActual = manualActualOverrides.TryGetValue(curProj, out var manAct);
+
+                if (hasSavedApplied || hasSavedActual)
                 {
-                    actualCharges = manAct;
+                    // Already in table! Strictly use what is in table, do NOT take from agreed rate!
+                    projectApplied = hasSavedApplied ? manApp : manAct;
+                    actualCharges = hasSavedActual ? manAct : manApp;
+                }
+                else
+                {
+                    // First time: not in table yet!
+                    // Take from agreed charges (curProjRate)
+                    projectApplied = curProjRate > 0 ? curProjRate : null;
+                    actualCharges = curProjRate > 0 ? curProjRate : null;
                 }
 
                 if (actualCharges.HasValue)
@@ -2456,24 +2581,25 @@ public class ProfileInvoicingService : IProfileInvoicingService
             // If curProj > 0, output Project Header Row
             if (curProj > 0)
             {
-                // KAAM 1 Rule 4: Total Agreed (H) par IsIncluded ka koi asar NA ho
-                if (curProjRate > 0)
-                {
-                    sumAgreed += curProjRate;
-                }
+                    // KAAM 1 Rule 4: Total Agreed (H) par IsIncluded ka koi asar NA ho
+                    if (curProjRate > 0)
+                    {
+                        sumAgreed += curProjRate;
+                    }
 
-                result.Rows.Add(new ProfileInvoiceExcelViewRowDto
-                {
-                    RowType = "ProjectHeader",
-                    IsIncluded = projHeaderIncluded,
-                    IsExecutive = string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase),
-                    ProfileOwner = ownerDisp,
-                    ProjectCode = curProj,
-                    ProjectName = curProjName,
-                    TotalCost = projTotal,
-                    AgreedRate = curProjRate,
-                    HoursDays = hoursDays,
-                    ProDays = pDays,
+                    result.Rows.Add(new ProfileInvoiceExcelViewRowDto
+                    {
+                        RowType = "ProjectHeader",
+                        IsIncluded = projHeaderIncluded,
+                        IsExecutive = string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase),
+                        ProfileOwner = ownerDisp,
+                        ProjectCode = curProj,
+                        ProjectName = curProjName,
+                        TotalCost = projTotal,
+                        AgreedRate = curProjRate,
+                        AppliedCharges = projectApplied,
+                        HoursDays = hoursDays,
+                        ProDays = pDays,
                     MonthDays = mDays,
                     ActualCharges = actualCharges,
                     SalaryRate = salaryRateFormatted,
@@ -2648,6 +2774,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ServiceHead = serviceHead,
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
+                        AppliedCharges = (string.Equals(serviceHead, "Job Holder", StringComparison.OrdinalIgnoreCase)) ? projectApplied : null,
+                        ActualCharges = (string.Equals(serviceHead, "Job Holder", StringComparison.OrdinalIgnoreCase)) ? actualCharges : null,
                         OtherCharge = isRowOther ? rowOtherAmt : null,
                         ChargedAmtPkr = isRowOther ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = isRowOther ? dRow.ExchangeRate : null,
@@ -2716,6 +2844,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         FinalUsd = finalUsd,
                         ChargedAmtUsd = dRow.ChargedAmtUsd ?? (dRow.TotalUsdCost + (dRow.ShareAmount ?? 0m)),
                         TotalCost = finalUsd,
+                        AppliedCharges = dRow.AppliedCharges,
+                        ActualCharges = dRow.ActualCharges,
                         OtherCharge = (isOther && dRow.IsIncluded) ? standaloneOtherAmt : null,
                         ChargedAmtPkr = (isOther && dRow.IsIncluded) ? dRow.ChargedAmtPkr : null,
                         ExchangeRate = (isOther && dRow.IsIncluded) ? dRow.ExchangeRate : null,
@@ -3411,15 +3541,23 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 }
             }
 
+            // Recalculate totalInvoice exactly as the frontend normalizeExcelViewData does:
+            // = actualChargesSum + sum of otherCharge for included non-header rows
+            // This ensures Processed tab & Email tab show the SAME value as Excel Sheet View banner.
+            decimal normalizedOtherSum = view.Rows
+                .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
+                            && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
+                .Sum(r => r.OtherCharge!.Value);            decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
+
             list.Add(new ProfileInvoiceProcessedProfileDto
             {
                 OwnerCode = oCode,
                 OwnerName = string.IsNullOrWhiteSpace(view.GroupOwnerName) ? $"Owner #{oCode}" : view.GroupOwnerName,
                 Month = cleanMonth,
                 TotalCost = view.TotalCostSum,
-                TotalInvoice = view.TotalInvoice,
+                TotalInvoice = normalizedTotalInvoice,
                 TotalActual = view.ActualChargesSum,
-                TotalOther = view.OtherChargeSum,
+                TotalOther = normalizedOtherSum,
                 RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,
                 InvoiceCodes = invoiceCodes
             });

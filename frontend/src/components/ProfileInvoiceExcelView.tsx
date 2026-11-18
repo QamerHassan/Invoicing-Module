@@ -12,7 +12,8 @@ import {
   CheckCircle,
   Archive,
   Users,
-  Save
+  Save,
+  Pencil
 } from 'lucide-react';
 import { api } from '../api/client';
 import { LoadingIndicator } from './LoadingIndicator';
@@ -57,7 +58,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [loading, setLoading] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'actualCharges' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
+  type EditableField = 'finalUsd' | 'totalCost' | 'agreedRate' | 'appliedCharges' | 'actualCharges' | 'hoursDays' | 'otherCharge' | 'salaryRate' | 'serviceHead' | 'jobType' | 'startEndDate' | 'projStatus' | 'profileNature' | 'handledFrom' | 'projectName' | 'stack';
   const [editingCell, setEditingCell] = useState<{
     rowIdx: number;
     rowType: 'ProjectHeader' | 'Detail' | 'Standalone';
@@ -570,27 +571,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       if (field === 'agreedRate') {
         const newAgreed = isNaN(numVal) ? (targetRow.agreedRate || 0) : numVal;
         targetRow.agreedRate = newAgreed;
-
-        // Change 2: If hrs/days are present, calculate actual = agreed / monthDays * proDays; otherwise actual = agreed
-        let pDays = targetRow.proDays;
-        let mDays = targetRow.monthDays;
-        if ((pDays == null || mDays == null || mDays <= 0) && targetRow.hoursDays) {
-          const parts = targetRow.hoursDays.trim().split('/');
-          if (parts.length === 2) {
-            const p = parseFloat(parts[0]);
-            const m = parseFloat(parts[1]);
-            if (!isNaN(p) && !isNaN(m) && m > 0) {
-              pDays = p;
-              mDays = m;
-            }
-          }
-        }
-
-        let calculatedActual = newAgreed;
-        if (pDays != null && mDays != null && mDays > 0) {
-          calculatedActual = Math.round((newAgreed / mDays) * pDays);
-        }
-        targetRow.actualCharges = calculatedActual;
+        // Agreed Rate has ZERO effect on applied or actual charges in Excel View
       } else if (field === 'hoursDays') {
         targetRow.hoursDays = value;
         const parts = (value || '').trim().split('/');
@@ -605,6 +586,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             }
           }
         }
+      } else if (field === 'appliedCharges') {
+        const val = isNaN(numVal) ? targetRow.appliedCharges : numVal;
+        targetRow.appliedCharges = val;
+        targetRow.actualCharges = val;
       } else if (field === 'actualCharges') {
         targetRow.actualCharges = isNaN(numVal) ? targetRow.actualCharges : numVal;
       } else if (field === 'otherCharge') {
@@ -623,13 +608,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       newRows[targetIdx] = targetRow;
     }
 
-    // Recalculate sums if otherCharge, actualCharges or finalUsd changed
+    // Recalculate sums if otherCharge, actualCharges, agreedRate or finalUsd changed
     let newOtherSum = 0;
     let newActualSum = 0;
+    let newAgreedSum = 0;
     for (const r of newRows) {
       if (r.rowType === 'ProjectHeader' || r.rowType === 'Standalone') {
         if (r.isIncluded !== false && r.actualCharges != null) {
           newActualSum += r.actualCharges;
+        }
+        if (r.agreedRate != null && r.agreedRate > 0) {
+          newAgreedSum += r.agreedRate;
         }
       }
       if (r.rowType === 'Blank' || r.rowType === 'StackHeader' || r.rowType === 'ProjectHeader') continue;
@@ -642,13 +631,14 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     setData({
       ...data,
       rows: newRows,
+      agreedRateSum: Math.round(newAgreedSum),
       actualChargesSum: Math.round(newActualSum),
       otherChargeSum: Math.round(newOtherSum),
       totalInvoice: Math.round(newTotalInvoice)
     });
 
     // Record pending update for manual save (auto-save removed)
-    if ((rowType === 'ProjectHeader' || field === 'agreedRate' || field === 'actualCharges') && projectCode) {
+    if ((rowType === 'ProjectHeader' || field === 'agreedRate' || field === 'appliedCharges' || field === 'actualCharges') && projectCode) {
       setPendingProjectUpdates(prev => {
         const next = new Map(prev);
         const req: ProfileInvoiceProjectUpdateRequest = next.get(projectCode) || {
@@ -658,6 +648,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
         if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
+        else if (field === 'appliedCharges' && !isNaN(num)) {
+          req.appliedCharges = num;
+          req.actualCharges = num;
+        }
         else if (field === 'actualCharges' && !isNaN(num)) req.actualCharges = num;
         else if (field === 'hoursDays' && value) {
           const parts = value.trim().split('/');
@@ -686,7 +680,12 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         };
         const cleanVal = (value || '').replace(/[^0-9.-]+/g, '');
         const num = parseFloat(cleanVal);
-        if (field === 'otherCharge' && !isNaN(num)) {
+        if (field === 'appliedCharges' && !isNaN(num)) {
+          req.appliedCharges = num;
+          req.actualCharges = num;
+        } else if (field === 'actualCharges' && !isNaN(num)) {
+          req.actualCharges = num;
+        } else if (field === 'otherCharge' && !isNaN(num)) {
           req.chargedAmtUsd = num;
         } else if (field === 'serviceHead') {
           req.remarks = value;
@@ -742,8 +741,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     align: 'left' | 'right' | 'center' = 'right'
   ) => {
     const isEditing = editingCell?.rowIdx === rowIdx && editingCell.field === field;
-    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'actualCharges' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
-                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'actualCharges' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
+    const canEdit = (rowType === 'ProjectHeader' && (field === 'agreedRate' || field === 'appliedCharges' || field === 'actualCharges' || field === 'hoursDays' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom')) ||
+                   ((rowType === 'Detail' || rowType === 'Standalone') && (field === 'appliedCharges' || field === 'actualCharges' || field === 'otherCharge' || field === 'serviceHead' || field === 'agreedRate' || field === 'salaryRate' || field === 'projectName' || field === 'stack' || field === 'jobType' || field === 'startEndDate' || field === 'projStatus' || field === 'profileNature' || field === 'handledFrom'));
 
     if (!canEdit) {
       if (field === 'totalCost' || field === 'finalUsd') {
@@ -756,7 +755,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       return displayValue;
     }
 
-    const isNumberField = field === 'agreedRate' || field === 'otherCharge' || field === 'actualCharges';
+    const isNumberField = field === 'agreedRate' || field === 'appliedCharges' || field === 'otherCharge' || field === 'actualCharges';
 
     if (isEditing) {
       return (
@@ -810,28 +809,60 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
     return (
       <div
-        onClick={() => {
-          if (!checkConfirmFinalized()) return;
-          setEditingCell({
-            rowIdx,
-            rowType,
-            code: code ?? undefined,
-            projectCode: projectCode ?? undefined,
-            field,
-            value: String(rawValue ?? '')
-          });
-        }}
-        title="Click to edit"
         style={{
-          cursor: 'pointer',
-          padding: '0.1rem 0.2rem',
-          borderRadius: '3px',
-          display: 'inline-block',
-          minWidth: '20px'
+          display: 'inline-flex',
+          alignItems: 'center',
+          flexWrap: 'nowrap',
+          gap: '0.2rem',
+          justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+          width: '100%',
+          overflow: 'hidden',
         }}
         className="editable-cell-hover"
       >
-        {displayValue}
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: align }}>{displayValue}</span>
+        <button
+          type="button"
+          title="Edit"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!checkConfirmFinalized()) return;
+            setEditingCell({
+              rowIdx,
+              rowType,
+              code: code ?? undefined,
+              projectCode: projectCode ?? undefined,
+              field,
+              value: String(rawValue ?? '')
+            });
+          }}
+          style={{
+            background: 'transparent',
+            border: '1px solid transparent',
+            borderRadius: '3px',
+            padding: '1px 3px',
+            cursor: 'pointer',
+            color: 'var(--accent-primary, #6366f1)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            opacity: 0.4,
+            flexShrink: 0,
+            lineHeight: 1,
+            transition: 'opacity 0.15s, background 0.15s',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = '1';
+            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(99,102,241,0.12)';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(99,102,241,0.3)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = '0.4';
+            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent';
+          }}
+        >
+          <Pencil size={10} />
+        </button>
       </div>
     );
   };
@@ -1714,7 +1745,19 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                       }}
                     />
 
-                    {/* Column 9: Directly above Hrs/Dys (I) */}
+                    {/* Column 9: Directly above Applied */}
+                    <th
+                      style={{
+                        background: 'var(--bg-secondary)',
+                        borderBottom: '2px solid var(--border-medium)',
+                        padding: '4px 8px',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 12
+                      }}
+                    />
+
+                    {/* Column 10: Directly above Hrs/Dys (I) */}
                     <th
                       style={{
                         background: 'var(--bg-secondary)',
@@ -1862,6 +1905,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   <th style={{ minWidth: '100px', textAlign: 'left' }}>Service Head (E)</th>
                   <th style={{ minWidth: '120px', textAlign: 'right' }}>Final USD / Total Cost</th>
                   <th style={{ minWidth: '70px', textAlign: 'right' }}>Agreed (H)</th>
+                  <th style={{ minWidth: '70px', textAlign: 'right' }}>Applied</th>
                   <th style={{ minWidth: '55px', textAlign: 'center' }}>Hrs/Dys (I)</th>
                   <th style={{ minWidth: '70px', textAlign: 'right' }}>Actual (J)</th>
                   <th style={{ minWidth: '65px', textAlign: 'right' }}>Other (K)</th>
@@ -1875,13 +1919,13 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={16} style={{ padding: '3rem' }}>
+                  <td colSpan={17} style={{ padding: '3rem' }}>
                     <LoadingIndicator message="Loading Excel view..." />
                   </td>
                 </tr>
               ) : !data || data.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={16} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={17} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     {data && data.totalSavedRows === 0 && displayOwnerName
                       ? `No saved rows for ${displayOwnerName} in ${cleanMonth}. Profile Invoicing mein Save & Post karein.`
                       : 'No saved invoice rows found for this Group Owner and Month.'}
@@ -1892,7 +1936,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   if (row.rowType === 'Blank') {
                     return (
                       <tr key={idx} style={{ height: '8px', background: 'rgba(0,0,0,0.02)' }}>
-                        <td colSpan={16} style={{ border: '1px solid var(--border-subtle)', padding: 0 }} />
+                        <td colSpan={17} style={{ border: '1px solid var(--border-subtle)', padding: 0 }} />
                       </tr>
                     );
                   }
@@ -1909,7 +1953,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                       >
                         <td style={{ padding: '0.1rem 0.25rem', border: '1px solid var(--border-subtle)' }} />
                         <td
-                          colSpan={15}
+                          colSpan={16}
                           style={{
                             padding: '0.25rem 0.5rem',
                             fontWeight: 800,
@@ -2140,6 +2184,25 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         {renderEditableCell(idx, 'agreedRate', row.agreedRate != null ? `$${row.agreedRate.toLocaleString()}` : '', row.agreedRate, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')}
                       </td>
 
+                      {/* Applied Charges (Directly after Agreed Rate H) */}
+                      <td 
+                        onClick={() => setSelectedCell({ rowIdx: idx, colKey: 'Applied' })}
+                        style={{
+                          padding: isHeader ? '0.3rem 0.4rem' : '0.2rem 0.35rem',
+                          textAlign: 'right',
+                          fontFamily: 'var(--font-mono)',
+                          fontWeight: isHeader ? 900 : 700,
+                          fontSize: isHeader ? '17px' : '14px',
+                          color: '#0284c7',
+                          border: '1px solid var(--border-subtle)',
+                          ...getCellHighlight('Applied')
+                        }}
+                      >
+                        {(isHeader || row.rowType === 'Standalone')
+                          ? renderEditableCell(idx, 'appliedCharges', row.appliedCharges != null ? `$${row.appliedCharges.toLocaleString()}` : '', row.appliedCharges, row.rowType, row.cmpProfInvoiceCode, row.projectCode, 'right')
+                          : null}
+                      </td>
+
                       {/* I: Hours/Days */}
                       <td 
                         onClick={() => setSelectedCell({ rowIdx: idx, colKey: 'I' })}
@@ -2171,16 +2234,20 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           ...getCellHighlight('J')
                         }}
                       >
-                        {renderEditableCell(
-                          idx,
-                          'actualCharges',
-                          row.actualCharges != null ? `$${row.actualCharges.toLocaleString()}` : '',
-                          row.actualCharges,
-                          row.rowType,
-                          row.cmpProfInvoiceCode,
-                          row.projectCode,
-                          'right'
-                        )}
+
+                        {(isHeader || row.rowType === 'Standalone')
+                          ? renderEditableCell(
+                              idx,
+                              'actualCharges',
+                              row.actualCharges != null ? `$${row.actualCharges.toLocaleString()}` : '',
+                              row.actualCharges,
+                              row.rowType,
+                              row.cmpProfInvoiceCode,
+                              row.projectCode,
+                              'right'
+                            )
+                          : null
+                        }
                       </td>
 
                       {/* K: Other Charge */}

@@ -43,6 +43,8 @@ public class ProfileInvoiceRowDto
     public int? InterviewSeqCode { get; set; }
     public int? MonthDays { get; set; }
     public int? ProRateDays { get; set; }
+    public decimal? AppliedCharges { get; set; }
+    public decimal? ActualCharges { get; set; }
     public string Source { get; set; } = string.Empty;
     public string? ServiceHeadName { get; set; }
     public bool IsIncluded { get; set; } = true;
@@ -145,6 +147,8 @@ public class ProfileInvoiceRowUpdateRequest
     public bool? IsIncluded { get; set; }
     public decimal? TotalCost { get; set; }
     public decimal? AgreedRate { get; set; }
+    public decimal? AppliedCharges { get; set; }
+    public decimal? ActualCharges { get; set; }
     public int? ProRateDays { get; set; }
     public int? MonthDays { get; set; }
     public string? SalaryRate { get; set; }
@@ -155,6 +159,7 @@ public class ProfileInvoiceRowUpdateRequest
 public class ProfileInvoiceProjectUpdateRequest
 {
     public decimal? AgreedRate { get; set; }
+    public decimal? AppliedCharges { get; set; }
     public decimal? ActualCharges { get; set; }
     public int? ProRateDays { get; set; }
     public int? MonthDays { get; set; }
@@ -196,6 +201,7 @@ public class ProfileInvoiceExcelViewRowDto
     public decimal? ChargedAmtUsd { get; set; }
     public decimal? TotalCost { get; set; }
     public decimal? AgreedRate { get; set; }
+    public decimal? AppliedCharges { get; set; }
     public string? HoursDays { get; set; }
     public int? ProDays { get; set; }
     public int? MonthDays { get; set; }

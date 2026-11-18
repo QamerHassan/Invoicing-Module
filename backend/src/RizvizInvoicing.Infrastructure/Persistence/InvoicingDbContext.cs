@@ -155,6 +155,8 @@ public class InvoicingDbContext : DbContext
             entity.Property(e => e.DiscussMarkedBy).HasColumnName("discuss_marked_by").HasMaxLength(100);
             entity.Property(e => e.DiscussMarkedTime).HasColumnName("discuss_marked_time");
             entity.Property(e => e.IsProcessed).HasColumnName("is_processed").HasDefaultValue(false);
+            entity.Property(e => e.AppliedCharges).HasColumnName("applied_charges");
+            entity.Property(e => e.ActualCharges).HasColumnName("actual_charges");
         });
 
         // 5. NumberControl -> dbo.NumberControl
