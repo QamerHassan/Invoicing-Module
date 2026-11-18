@@ -20,7 +20,6 @@ import { LoadingIndicator } from './LoadingIndicator';
 import { ProfileInvoiceAuditTab } from './ProfileInvoiceAuditTab';
 import { ProfileInvoiceUnprocessedTab } from './ProfileInvoiceUnprocessedTab';
 import { ProfileInvoiceToBeDiscussedTab } from './ProfileInvoiceToBeDiscussedTab';
-import { ProfileInvoiceEmailTab } from './ProfileInvoiceEmailTab';
 import { ProfileInvoiceProcessedTab } from './ProfileInvoiceProcessedTab';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 import type { 
@@ -101,7 +100,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
 
   // Email sub-tab integration for Save & Email
   const [emailSelectedCodes, setEmailSelectedCodes] = useState<number[] | null>(null);
-  const [emailSelectedRows, setEmailSelectedRows] = useState<any[] | null>(null);
+  const [, setEmailSelectedRows] = useState<any[] | null>(null);
 
   // Unprocessed owners for the top navigation dropdown
   const [unprocessedOwners, setUnprocessedOwners] = useState<ProfileInvoiceUnprocessedRowDto[]>([]);
@@ -120,12 +119,18 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   const [pendingNavigationTab, setPendingNavigationTab] = useState<ExcelSubTab | null>(null);
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState<boolean>(false);
 
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([activeExcelTab === 'email' ? 'processed' : activeExcelTab]));
+  useEffect(() => {
+    const tabKey = (activeExcelTab === 'email') ? 'processed' : activeExcelTab;
+    setVisitedTabs(prev => {
+      if (prev.has(tabKey)) return prev;
+      const next = new Set(prev);
+      next.add(tabKey);
+      return next;
+    });
+  }, [activeExcelTab]);
+
   const executeTabChange = (newTab: ExcelSubTab) => {
-    if (newTab === 'sheet') {
-      setSelectedOwnerCode('');
-      setData(null);
-      if (onOwnerChange) onOwnerChange('');
-    }
     setActiveExcelTab(newTab);
   };
 
@@ -587,9 +592,21 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           }
         }
       } else if (field === 'appliedCharges') {
-        const val = isNaN(numVal) ? targetRow.appliedCharges : numVal;
+        const val = isNaN(numVal) ? (targetRow.appliedCharges ?? 0) : numVal;
         targetRow.appliedCharges = val;
-        targetRow.actualCharges = val;
+        // Prorate actualCharges based on hoursDays (e.g. "31/31" or "15/31")
+        let computedActual = val;
+        if (targetRow.hoursDays) {
+          const hParts = targetRow.hoursDays.trim().split('/');
+          if (hParts.length === 2) {
+            const proD = parseFloat(hParts[0]);
+            const monD = parseFloat(hParts[1]);
+            if (!isNaN(proD) && !isNaN(monD) && monD > 0) {
+              computedActual = Math.round((val / monD) * proD);
+            }
+          }
+        }
+        targetRow.actualCharges = computedActual;
       } else if (field === 'actualCharges') {
         targetRow.actualCharges = isNaN(numVal) ? targetRow.actualCharges : numVal;
       } else if (field === 'otherCharge') {
@@ -650,7 +667,20 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         if (field === 'agreedRate' && !isNaN(num)) req.agreedRate = num;
         else if (field === 'appliedCharges' && !isNaN(num)) {
           req.appliedCharges = num;
-          req.actualCharges = num;
+          // Prorate actualCharges for pendingProjectUpdates
+          let computedActualPP = num;
+          const hd = newRows.find(r => r.projectCode === projectCode || r.cmpProfInvoiceCode === projectCode)?.hoursDays;
+          if (hd) {
+            const ppParts = hd.trim().split('/');
+            if (ppParts.length === 2) {
+              const proDP = parseFloat(ppParts[0]);
+              const monDP = parseFloat(ppParts[1]);
+              if (!isNaN(proDP) && !isNaN(monDP) && monDP > 0) {
+                computedActualPP = Math.round((num / monDP) * proDP);
+              }
+            }
+          }
+          req.actualCharges = computedActualPP;
         }
         else if (field === 'actualCharges' && !isNaN(num)) req.actualCharges = num;
         else if (field === 'hoursDays' && value) {
@@ -682,7 +712,20 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         const num = parseFloat(cleanVal);
         if (field === 'appliedCharges' && !isNaN(num)) {
           req.appliedCharges = num;
-          req.actualCharges = num;
+          // Prorate actualCharges for pendingRowUpdates using the row's hoursDays
+          let computedActualPR = num;
+          const rowForCode = newRows.find(r => r.cmpProfInvoiceCode === code);
+          if (rowForCode?.hoursDays) {
+            const prParts = rowForCode.hoursDays.trim().split('/');
+            if (prParts.length === 2) {
+              const proDR = parseFloat(prParts[0]);
+              const monDR = parseFloat(prParts[1]);
+              if (!isNaN(proDR) && !isNaN(monDR) && monDR > 0) {
+                computedActualPR = Math.round((num / monDR) * proDR);
+              }
+            }
+          }
+          req.actualCharges = computedActualPR;
         } else if (field === 'actualCharges' && !isNaN(num)) {
           req.actualCharges = num;
         } else if (field === 'otherCharge' && !isNaN(num)) {
@@ -1076,8 +1119,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     }
   };
 
-  const handleSaveAndEmail = async () => {
+  const handleSaveProcessAndEmail = async () => {
     if (!someSelected || !data || processingSelected) return;
+
+    // 1. Save pending cell edit if actively editing
     if (editingCell) {
       try {
         await handleCellSave();
@@ -1086,11 +1131,13 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         return;
       }
     }
+
     const codes = getSelectedCodes();
     if (codes.length === 0) return;
 
-    // Save any pending changes before email/process
+    // 2. Commit all pending project and row changes (everything regular Save button saves)
     if (pendingProjectUpdates.size > 0 || pendingRowUpdates.size > 0) {
+      setIsSavingChanges(true);
       try {
         for (const [projCode, updateReq] of pendingProjectUpdates.entries()) {
           await api.updateProfileInvoiceProject(projCode, updateReq);
@@ -1100,27 +1147,40 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         }
         setPendingProjectUpdates(new Map());
         setPendingRowUpdates(new Map());
-      } catch (saveErr) {
-        console.warn('Pending save before email error:', saveErr);
+        setSaveSuccessMsg('All changes saved successfully!');
+        setTimeout(() => setSaveSuccessMsg(null), 3000);
+      } catch (saveErr: any) {
+        console.error('Pending save before process & email error:', saveErr);
+        flashMsg('error', saveErr?.message || 'Failed to save pending changes.');
+        setIsSavingChanges(false);
+        return;
+      } finally {
+        setIsSavingChanges(false);
       }
     }
 
-    // Move selected rows to Processed (is_processed = 1)
+    // 3. Move selected rows to Processed (is_processed = 1)
     setProcessingSelected(true);
+    setProcessMsg(null);
     try {
       const res = await api.processInvoices(codes);
       if (!res.success) {
+        setProcessMsg({ type: 'error', text: res.message || 'Failed to process invoices.' });
         flashMsg('error', res.message || 'Failed to mark invoices as processed.');
+        return;
       } else {
+        setProcessMsg({ type: 'success', text: res.message || `${res.updatedCount} invoice(s) processed successfully.` });
         setUnprocessedRefreshKey(k => k + 1);
         fetchUnprocessedOwners();
       }
     } catch (err: any) {
-      console.warn('Process before email warning:', err);
+      flashMsg('error', err?.message || 'Failed to process invoices.');
+      return;
     } finally {
       setProcessingSelected(false);
     }
 
+    // 4. Build preview rows and open email compose directly in Processed & Email tab
     const previewRows: any[] = [];
     data.rows.forEach(row => {
       if ((row.rowType === 'Detail' || row.rowType === 'Standalone') && row.cmpProfInvoiceCode && codes.includes(row.cmpProfInvoiceCode)) {
@@ -1140,64 +1200,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     setEmailSelectedCodes(codes);
     setEmailSelectedRows(previewRows);
     setActiveExcelTab('email');
-  };
-
-  const handleSaveAndProcess = async () => {
-    if (!someSelected || !data) return;
-    if (editingCell) {
-      try {
-        await handleCellSave();
-      } catch (err: any) {
-        flashMsg('error', err?.message || 'Failed to save pending cell edit.');
-        return;
-      }
-    }
-    const codes = getSelectedCodes();
-    if (codes.length === 0) return;
-
-    const ok = window.confirm(`${codes.length} rows process hongi. Kya aap sure hain?`);
-    if (!ok) return;
-
-    // Save any pending changes before process
-    if (pendingProjectUpdates.size > 0 || pendingRowUpdates.size > 0) {
-      try {
-        for (const [projCode, updateReq] of pendingProjectUpdates.entries()) {
-          await api.updateProfileInvoiceProject(projCode, updateReq);
-        }
-        for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
-          await api.updateProfileInvoiceRow(rowCode, updateReq);
-        }
-        setPendingProjectUpdates(new Map());
-        setPendingRowUpdates(new Map());
-      } catch (saveErr) {
-        console.warn('Pending save before process error:', saveErr);
-      }
-    }
-
-    setProcessingSelected(true);
-    setProcessMsg(null);
-    try {
-      const res = await api.processInvoices(codes);
-      if (!res.success) {
-        setProcessMsg({ type: 'error', text: res.message || 'Failed to process invoices.' });
-        flashMsg('error', res.message || 'Failed to process invoices.');
-        return;
-      }
-      setProcessMsg({ type: 'success', text: res.message || `${res.updatedCount} invoice(s) processed successfully.` });
-      flashMsg('success', res.message || `${res.updatedCount} invoice(s) processed successfully. Processed tab mein move ho chuki hain.`);
-      setSelectedOwnerCode('');
-      if (onOwnerChange) onOwnerChange('');
-      setData(null);
-      setUnprocessedRefreshKey(k => k + 1);
-      await fetchUnprocessedOwners();
-      setActiveExcelTab('processed');
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to process invoices.';
-      setProcessMsg({ type: 'error', text: msg });
-      flashMsg('error', msg);
-    } finally {
-      setProcessingSelected(false);
-    }
   };
 
   return (
@@ -1288,12 +1290,12 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
               height: '32px',
               padding: '0 0.75rem',
               fontSize: '0.82rem',
-              fontWeight: activeExcelTab === 'processed' ? 800 : 700,
+              fontWeight: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? 800 : 700,
               borderRadius: '6px',
-              border: activeExcelTab === 'processed' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
-              background: activeExcelTab === 'processed' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
-              color: activeExcelTab === 'processed' ? '#ffffff' : 'var(--text-main)',
-              boxShadow: activeExcelTab === 'processed' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              border: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? '#ffffff' : 'var(--text-main)',
+              boxShadow: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
@@ -1303,32 +1305,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             }}
           >
             <Archive size={14} style={{ flexShrink: 0 }} />
-            <span>Processed</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('email')}
-            className="compact-tab-btn"
-            style={{
-              height: '32px',
-              padding: '0 0.75rem',
-              fontSize: '0.82rem',
-              fontWeight: activeExcelTab === 'email' ? 800 : 700,
-              borderRadius: '6px',
-              border: activeExcelTab === 'email' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
-              background: activeExcelTab === 'email' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
-              color: activeExcelTab === 'email' ? '#ffffff' : 'var(--text-main)',
-              boxShadow: activeExcelTab === 'email' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <Mail size={14} style={{ flexShrink: 0 }} />
-            <span>Email</span>
+            <span>Processed & Email</span>
           </button>
 
           <button
@@ -1365,60 +1342,53 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         )}
       </div>
 
-      {activeExcelTab === 'audit' ? (
-        <ProfileInvoiceAuditTab
-          groupOwners={postedOwners}
-          initialOwnerCode={selectedOwnerCode}
-          initialMonth={cleanMonth}
-        />
-      ) : activeExcelTab === 'unprocessed' ? (
-        <ProfileInvoiceUnprocessedTab
-          initialMonth={cleanMonth}
-          onSelectOwner={handleNavigateFromUnprocessed}
-          refreshKey={unprocessedRefreshKey}
-        />
-      ) : activeExcelTab === 'discussed' ? (
-        <ProfileInvoiceToBeDiscussedTab
-          groupOwners={postedOwners}
-          initialOwnerCode=""
-          initialMonth={cleanMonth}
-        />
-      ) : activeExcelTab === 'processed' ? (
-        <ProfileInvoiceProcessedTab
-          groupOwners={postedOwners}
-          initialOwnerCode=""
-          initialMonth={cleanMonth}
-          onRefreshUnprocessed={() => {
-            setUnprocessedRefreshKey(k => k + 1);
-            fetchUnprocessedOwners();
-          }}
-          onViewInExcel={handleViewProcessedInExcel}
-        />
-      ) : activeExcelTab === 'email' ? (
-        <ProfileInvoiceEmailTab
-          groupOwners={postedOwners.length > 0 ? postedOwners : _groupOwners}
-          initialOwnerCode={emailSelectedCodes ? selectedOwnerCode : (selectedOwnerCode || "")}
-          initialMonth={cleanMonth}
-          selectedCodes={emailSelectedCodes ?? undefined}
-          selectedRowsPreview={emailSelectedRows ?? undefined}
-          excelTotalInvoice={data?.totalInvoice}
-          onNavigateToUnprocessed={(targetOwner, targetMonth) => {
-            if (targetOwner) setSelectedOwnerCode(targetOwner);
-            if (targetMonth) setMonthYear(targetMonth);
-            setActiveExcelTab('sheet');
-            setEmailSelectedCodes(null);
-            setEmailSelectedRows(null);
-          }}
-          onOwnerChange={() => {
-            // Keep email tab selection local; do not override excel sheet view owner
-          }}
-          onMonthChange={(newMonth) => {
-            setMonthYear(newMonth);
-            if (onMonthChange) onMonthChange(newMonth);
-          }}
-        />
-      ) : (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
+      {visitedTabs.has('audit') && (
+        <div style={{ display: activeExcelTab === 'audit' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <ProfileInvoiceAuditTab
+            groupOwners={postedOwners}
+            initialOwnerCode={selectedOwnerCode}
+            initialMonth={cleanMonth}
+          />
+        </div>
+      )}
+
+      {visitedTabs.has('unprocessed') && (
+        <div style={{ display: activeExcelTab === 'unprocessed' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <ProfileInvoiceUnprocessedTab
+            initialMonth={cleanMonth}
+            onSelectOwner={handleNavigateFromUnprocessed}
+            refreshKey={unprocessedRefreshKey}
+          />
+        </div>
+      )}
+
+      {visitedTabs.has('discussed') && (
+        <div style={{ display: activeExcelTab === 'discussed' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <ProfileInvoiceToBeDiscussedTab
+            groupOwners={postedOwners}
+            initialOwnerCode=""
+            initialMonth={cleanMonth}
+          />
+        </div>
+      )}
+
+      {(visitedTabs.has('processed') || visitedTabs.has('email')) && (
+        <div style={{ display: (activeExcelTab === 'processed' || activeExcelTab === 'email') ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <ProfileInvoiceProcessedTab
+            groupOwners={postedOwners.length > 0 ? postedOwners : _groupOwners}
+            initialOwnerCode={emailSelectedCodes ? selectedOwnerCode : ""}
+            initialMonth={cleanMonth}
+            initialComposing={activeExcelTab === 'email'}
+            onRefreshUnprocessed={() => {
+              setUnprocessedRefreshKey(k => k + 1);
+              fetchUnprocessedOwners();
+            }}
+            onViewInExcel={handleViewProcessedInExcel}
+          />
+        </div>
+      )}
+
+      <div style={{ display: activeExcelTab === 'sheet' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
           {/* Action notification banner */}
           {actionMsg && (
             <div style={{
@@ -1572,44 +1542,25 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                 {downloading ? 'Downloading...' : 'Download XLSX'}
               </button>
 
-              {/* Save & Email button */}
+              {/* Save, Process & Email button */}
               <button
-                onClick={handleSaveAndEmail}
+                onClick={handleSaveProcessAndEmail}
                 disabled={!someSelected || processingSelected || !data}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '2px 10px', height: '30px', fontSize: '0.80rem', fontWeight: 700,
-                  background: someSelected ? '#6366f1' : 'var(--bg-secondary)',
-                  color: someSelected ? '#fff' : 'var(--text-muted)',
-                  border: `1px solid ${someSelected ? '#6366f1' : 'var(--border-subtle)'}`,
-                  borderRadius: '6px',
-                  cursor: someSelected ? 'pointer' : 'not-allowed',
-                  opacity: someSelected ? 1 : 0.5
-                }}
-                title={someSelected ? `Send ${selectedCodesCount} selected invoices by email` : 'Select rows first'}
-              >
-                <Mail size={13} />
-                Save & Email
-              </button>
-
-              {/* Save & Process button */}
-              <button
-                onClick={handleSaveAndProcess}
-                disabled={!someSelected || processingSelected || !data}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '2px 10px', height: '30px', fontSize: '0.80rem', fontWeight: 700,
-                  background: someSelected ? '#2563eb' : 'var(--bg-secondary)',
+                  padding: '2px 12px', height: '30px', fontSize: '0.80rem', fontWeight: 800,
+                  background: someSelected ? 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)' : 'var(--bg-secondary)',
                   color: someSelected ? '#fff' : 'var(--text-muted)',
                   border: `1px solid ${someSelected ? '#2563eb' : 'var(--border-subtle)'}`,
                   borderRadius: '6px',
                   cursor: someSelected ? 'pointer' : 'not-allowed',
-                  opacity: someSelected ? 1 : 0.5
+                  opacity: someSelected ? 1 : 0.5,
+                  boxShadow: someSelected ? '0 2px 6px rgba(37, 99, 235, 0.3)' : 'none'
                 }}
-                title={someSelected ? `Process ${selectedCodesCount} selected invoices` : 'Select rows first'}
+                title={someSelected ? `Save all changes, process ${selectedCodesCount} selected invoices and open email compose` : 'Select rows first'}
               >
-                <CheckCircle size={13} className={processingSelected ? 'spin' : ''} />
-                {processingSelected ? 'Processing...' : 'Save & Process'}
+                <Mail size={13} className={processingSelected ? 'spin' : ''} />
+                <span>{processingSelected ? 'Processing...' : 'Save, Process & Email'}</span>
               </button>
             </div>
           </div>
@@ -1748,8 +1699,8 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                     {/* Column 9: Directly above Applied */}
                     <th
                       style={{
-                        background: 'var(--bg-secondary)',
-                        borderBottom: '2px solid var(--border-medium)',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        borderBottom: '2px solid rgba(16, 185, 129, 0.35)',
                         padding: '4px 8px',
                         position: 'sticky',
                         top: 0,
@@ -1905,7 +1856,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                   <th style={{ minWidth: '100px', textAlign: 'left' }}>Service Head (E)</th>
                   <th style={{ minWidth: '120px', textAlign: 'right' }}>Final USD / Total Cost</th>
                   <th style={{ minWidth: '70px', textAlign: 'right' }}>Agreed (H)</th>
-                  <th style={{ minWidth: '70px', textAlign: 'right' }}>Applied</th>
+                  <th style={{ minWidth: '70px', textAlign: 'right', background: 'rgba(16, 185, 129, 0.20)', color: '#047857', borderBottom: '2px solid rgba(16, 185, 129, 0.35)' }}>Applied</th>
                   <th style={{ minWidth: '55px', textAlign: 'center' }}>Hrs/Dys (I)</th>
                   <th style={{ minWidth: '70px', textAlign: 'right' }}>Actual (J)</th>
                   <th style={{ minWidth: '65px', textAlign: 'right' }}>Other (K)</th>
@@ -2193,8 +2144,9 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           fontFamily: 'var(--font-mono)',
                           fontWeight: isHeader ? 900 : 700,
                           fontSize: isHeader ? '17px' : '14px',
-                          color: '#0284c7',
-                          border: '1px solid var(--border-subtle)',
+                          color: '#047857',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(16, 185, 129, 0.25)',
                           ...getCellHighlight('Applied')
                         }}
                       >
@@ -2449,7 +2401,6 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         </div>
       )}
       </div>
-    )}
 
     {/* Unsaved Changes Confirmation Modal */}
     {showUnsavedPrompt && (

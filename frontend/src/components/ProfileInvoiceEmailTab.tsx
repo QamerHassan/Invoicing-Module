@@ -29,6 +29,8 @@ interface ProfileInvoiceEmailTabProps {
   selectedCodes?: number[];
   selectedRowsPreview?: any[];
   excelTotalInvoice?: number;
+  initialViewMode?: 'list' | 'compose';
+  onBackToList?: () => void;
 }
 
 function parseEmailList(input: string): string[] {
@@ -65,7 +67,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   onMonthChange,
   selectedCodes,
   selectedRowsPreview,
-  excelTotalInvoice
+  excelTotalInvoice,
+  initialViewMode,
+  onBackToList
 }) => {
   const [month, setMonth] = useState<string>(
     (initialMonth || 'OCT26').replace('-', '').toUpperCase()
@@ -75,20 +79,25 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   // Mode: 'list' (default: show processed profiles with Email buttons) OR 'compose' (email compose form)
   const isSelectedMode = Boolean(selectedCodes && selectedCodes.length > 0);
   const [viewMode, setViewMode] = useState<'list' | 'compose'>(() => {
+    if (initialViewMode) return initialViewMode;
     return isSelectedMode ? 'compose' : 'list';
   });
 
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode);
 
+  useEffect(() => {
+    if (initialViewMode) setViewMode(initialViewMode);
+  }, [initialViewMode]);
+
   // Sync props from parent
   useEffect(() => {
     if (initialOwnerCode !== undefined && initialOwnerCode !== '') {
       setOwnerCode(initialOwnerCode);
-      if (isSelectedMode) {
+      if (isSelectedMode || initialViewMode === 'compose') {
         setViewMode('compose');
       }
     }
-  }, [initialOwnerCode, isSelectedMode]);
+  }, [initialOwnerCode, isSelectedMode, initialViewMode]);
 
   useEffect(() => {
     if (initialMonth) {
@@ -483,9 +492,13 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
 
         // Return to processed profiles list after successful send
         setTimeout(() => {
-          setViewMode('list');
-          setOwnerCode('');
-          loadProcessedProfiles();
+          if (onBackToList) {
+            onBackToList();
+          } else {
+            setViewMode('list');
+            setOwnerCode('');
+            loadProcessedProfiles();
+          }
         }, 1500);
       } else {
         setErrorMsg(result.message || 'Failed to send email.');
@@ -917,7 +930,11 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
             onClick={() => {
-              setViewMode('list');
+              if (onBackToList) {
+                onBackToList();
+              } else {
+                setViewMode('list');
+              }
               setSuccessMsg(null);
               setErrorMsg(null);
             }}

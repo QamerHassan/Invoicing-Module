@@ -204,7 +204,7 @@
             Live query directly against database with zero caching.
             </summary>
         </member>
-        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetProcessedProfiles(System.String,System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Threading.CancellationToken)">
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetProcessedProfiles(System.String,System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Boolean,System.Threading.CancellationToken)">
             <summary>
             Get profile-wise aggregate of processed invoices for month.
             </summary>

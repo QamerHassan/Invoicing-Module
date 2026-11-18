@@ -1,36 +1,51 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X, Eye } from 'lucide-react';
+import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X, Eye, Mail, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedProfileDto } from '../types';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 import { LoadingIndicator } from './LoadingIndicator';
+import { ProfileInvoiceEmailTab } from './ProfileInvoiceEmailTab';
 
 interface Props {
   groupOwners: ProfileGroupOwnerDto[];
   initialOwnerCode?: number | '';
   initialMonth?: string;
+  initialComposing?: boolean;
   onRefreshUnprocessed?: () => void;
   onViewInExcel?: (ownerCode: number, month: string) => void;
 }
+
+// In-memory client cache to persist processed profiles across tab switches
+const processedProfilesCache = new Map<string, ProfileInvoiceProcessedProfileDto[]>();
 
 export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   groupOwners,
   initialOwnerCode,
   initialMonth,
+  initialComposing,
   onRefreshUnprocessed,
   onViewInExcel
 }) => {
   const [month, setMonth] = useState(initialMonth || 'OCT26');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
-  const [profiles, setProfiles] = useState<ProfileInvoiceProcessedProfileDto[]>([]);
-  const [loading, setLoading] = useState(false);
+  const cleanMonth = (month || '').trim().replace('-', '').toUpperCase();
+  const cacheKey = `${cleanMonth}_${ownerCode}`;
+
+  const [profiles, setProfiles] = useState<ProfileInvoiceProcessedProfileDto[]>(() => {
+    return processedProfilesCache.get(cacheKey) || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !processedProfilesCache.has(cacheKey);
+  });
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [selectedOwnerCodes, setSelectedOwnerCodes] = useState<Set<number>>(new Set());
 
-  const cleanMonth = (month || '').trim().replace('-', '').toUpperCase();
+  // Email compose state
+  const [emailComposing, setEmailComposing] = useState(Boolean(initialComposing && initialOwnerCode));
+  const [emailOwnerCode, setEmailOwnerCode] = useState<number | ''>(initialComposing && initialOwnerCode ? initialOwnerCode : '');
 
   const getEmailedOwnersMap = useCallback((): Record<string, { emailedAt: string; toEmail?: string }> => {
     try {
@@ -50,7 +65,11 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   // Sync with parent props
   useEffect(() => {
     if (initialOwnerCode !== undefined) setOwnerCode(initialOwnerCode);
-  }, [initialOwnerCode]);
+    if (initialComposing && initialOwnerCode) {
+      setEmailComposing(true);
+      setEmailOwnerCode(initialOwnerCode);
+    }
+  }, [initialOwnerCode, initialComposing]);
   useEffect(() => {
     if (initialMonth) setMonth(initialMonth);
   }, [initialMonth]);
@@ -64,25 +83,33 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     setTimeout(() => setError(null), 6000);
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!month) return;
+    const currentKey = `${cleanMonth}_${ownerCode}`;
+    if (!force && processedProfilesCache.has(currentKey)) {
+      setProfiles(processedProfilesCache.get(currentKey)!);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       setEmailedOwners(getEmailedOwnersMap());
-      const data = await api.getProcessedProfiles(ownerCode !== '' ? ownerCode : undefined, month);
-      setProfiles(Array.isArray(data) ? data : []);
+      const data = await api.getProcessedProfiles(ownerCode !== '' ? ownerCode : undefined, month, force);
+      const list = Array.isArray(data) ? data : [];
+      processedProfilesCache.set(currentKey, list);
+      setProfiles(list);
       setSelectedOwnerCodes(new Set()); // Reset selection on reload
     } catch (err: any) {
       flashError(err?.message || 'Failed to load processed profiles.');
     } finally {
       setLoading(false);
     }
-  }, [month, ownerCode]);
+  }, [month, ownerCode, cleanMonth, getEmailedOwnersMap]);
 
   // Load when month or owner changes
   useEffect(() => {
-    load();
+    load(false);
   }, [load]);
 
   const filteredProfiles = useMemo(() => {
@@ -127,6 +154,10 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     return filteredProfiles.reduce((acc, p) => acc + (p.totalInvoice != null ? p.totalInvoice : 0), 0);
   }, [filteredProfiles]);
 
+  const totalCostSum = useMemo(() => {
+    return filteredProfiles.reduce((acc, p) => acc + (p.totalCost != null ? p.totalCost : 0), 0);
+  }, [filteredProfiles]);
+
   const totalRowsSum = useMemo(() => {
     return filteredProfiles.reduce((acc, p) => acc + (p.rowsCount || 0), 0);
   }, [filteredProfiles]);
@@ -145,8 +176,9 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
     try {
       const res = await api.unprocessInvoices(allInvoiceCodes);
       flashSuccess(res.message || `${count} profile(s) moved back to Unprocessed.`);
+      processedProfilesCache.clear();
       setSelectedOwnerCodes(new Set());
-      await load();
+      await load(true);
       onRefreshUnprocessed?.();
       if (count === 1 && selectedList.length === 1) {
         onViewInExcel?.(selectedList[0].ownerCode, selectedList[0].month || month);
@@ -170,7 +202,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
         next.delete(p.ownerCode);
         return next;
       });
-      await load();
+      processedProfilesCache.clear();
+      await load(true);
       onRefreshUnprocessed?.();
       onViewInExcel?.(p.ownerCode, p.month || month);
     } catch (err: any) {
@@ -183,6 +216,65 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   const fmtUsd = (v: number) =>
     v == null ? '$0' : '$' + Math.round(v).toLocaleString();
 
+  // ─── EMAIL COMPOSE VIEW ──────────────────────────────────────────────
+  if (emailComposing && emailOwnerCode !== '') {
+    return (
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+        {/* Back bar */}
+        <div className="compact-toolbar" style={{ minHeight: '28px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            onClick={() => {
+              setEmailComposing(false);
+              setEmailOwnerCode('');
+              // Refresh emailed status
+              setEmailedOwners(getEmailedOwnersMap());
+              load();
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              padding: '2px 8px',
+              height: '24px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-main)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer'
+            }}
+          >
+            <ArrowLeft size={12} />
+            <span>← Back to Processed & Email</span>
+          </button>
+        </div>
+        <ProfileInvoiceEmailTab
+          groupOwners={groupOwners}
+          initialOwnerCode={emailOwnerCode}
+          initialMonth={cleanMonth}
+          initialViewMode="compose"
+          onBackToList={() => {
+            setEmailComposing(false);
+            setEmailOwnerCode('');
+            setEmailedOwners(getEmailedOwnersMap());
+            load();
+          }}
+          onNavigateToUnprocessed={(targetOwner, targetMonth) => {
+            setEmailComposing(false);
+            setEmailOwnerCode('');
+            if (targetOwner && onViewInExcel) {
+              onViewInExcel(targetOwner, targetMonth || cleanMonth);
+            }
+          }}
+          onOwnerChange={() => {}}
+          onMonthChange={() => {}}
+        />
+      </div>
+    );
+  }
+
+  // ─── PROCESSED & EMAIL LIST VIEW ─────────────────────────────────────
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {/* Toolbar */}
@@ -232,7 +324,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
           />
 
           <button
-            onClick={load}
+            onClick={() => load(true)}
             disabled={loading || actionLoading}
             className="btn-secondary"
             style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '1px 7px', height: '24px', fontSize: '0.75rem', fontWeight: 600 }}
@@ -379,12 +471,12 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                   />
                 </th>
                 <th style={{ textAlign: 'center', width: '40px' }}>#</th>
-                <th style={{ minWidth: '180px', textAlign: 'left' }}>Profile Name</th>
+                <th style={{ minWidth: '260px', textAlign: 'left' }}>Profile Name</th>
                 <th style={{ minWidth: '70px', textAlign: 'center' }}>Month</th>
                 <th style={{ minWidth: '110px', textAlign: 'center' }}>Processed Invoices</th>
+                <th style={{ minWidth: '120px', textAlign: 'right' }}>Total Cost</th>
                 <th style={{ minWidth: '130px', textAlign: 'right' }}>Total Invoice</th>
                 <th style={{ minWidth: '110px', textAlign: 'center' }}>Emailed</th>
-                <th style={{ minWidth: '130px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -420,16 +512,118 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                       <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
                         {i + 1}
                       </td>
-                      <td style={{ fontWeight: 600 }}>{p.ownerName}</td>
+
+                      {/* Profile Name cell: Send Email on left, Name in middle, View+Undo on right */}
+                      <td style={{ fontWeight: 600 }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                          {/* Send Email button on the LEFT */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEmailOwnerCode(p.ownerCode);
+                              setEmailComposing(true);
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              padding: '2px 7px',
+                              height: '22px',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              background: isEmailed ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.12)',
+                              color: '#6366f1',
+                              border: '1px solid rgba(99,102,241,0.35)',
+                              borderRadius: 'var(--radius-sm)',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0
+                            }}
+                            title={isEmailed ? `Re-send email for ${p.ownerName}` : `Send email for ${p.ownerName}`}
+                          >
+                            <Mail size={11} />
+                            <span>{isEmailed ? 'Re-send' : 'Send Email'}</span>
+                          </button>
+
+                          {/* Profile Name in the middle */}
+                          <span style={{ fontWeight: 700, fontSize: '0.80rem', color: 'var(--text-main)', whiteSpace: 'nowrap', flex: '1 1 auto' }}>
+                            {p.ownerName}
+                          </span>
+
+                          {/* View + Undo buttons on the RIGHT */}
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, marginLeft: 'auto' }}>
+                            {/* View button */}
+                            <button
+                              type="button"
+                              onClick={() => onViewInExcel?.(p.ownerCode, p.month || month)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                padding: '2px 7px',
+                                height: '22px',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                color: '#059669',
+                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title={`Open ${p.ownerName}'s invoice in Excel Sheet View`}
+                            >
+                              <Eye size={11} />
+                              <span>View</span>
+                            </button>
+
+                            {/* Undo button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSingleUnprocess(p)}
+                              disabled={actionLoading}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                padding: '2px 6px',
+                                height: '22px',
+                                fontSize: '0.67rem',
+                                fontWeight: 600,
+                                background: 'transparent',
+                                color: '#2563eb',
+                                border: '1px solid rgba(37, 99, 235, 0.3)',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title="Move back to Unprocessed"
+                            >
+                              <RotateCcw size={10} />
+                              <span>Undo</span>
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
                         {p.month}
                       </td>
                       <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
                         {p.rowsCount} rows
                       </td>
+
+                      {/* Total Cost column */}
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-main)' }}>
+                        {fmtUsd(p.totalCost != null ? p.totalCost : 0)}
+                      </td>
+
+                      {/* Total Invoice column */}
                       <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
                         {fmtUsd(p.totalInvoice != null ? p.totalInvoice : 0)}
                       </td>
+
+                      {/* Emailed status */}
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         {isEmailed ? (
                           <div
@@ -469,56 +663,6 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                           </div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => onViewInExcel?.(p.ownerCode, p.month || month)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              padding: '2px 8px',
-                              height: '22px',
-                              fontSize: '0.70rem',
-                              fontWeight: 700,
-                              background: 'rgba(16, 185, 129, 0.1)',
-                              color: '#059669',
-                              border: '1px solid rgba(16, 185, 129, 0.35)',
-                              borderRadius: 'var(--radius-sm)',
-                              cursor: 'pointer'
-                            }}
-                            title={`Open ${p.ownerName}'s invoice in Excel Sheet View`}
-                          >
-                            <Eye size={12} />
-                            <span>View</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleSingleUnprocess(p)}
-                            disabled={actionLoading}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.2rem',
-                              padding: '2px 7px',
-                              height: '22px',
-                              fontSize: '0.68rem',
-                              fontWeight: 600,
-                              background: 'transparent',
-                              color: '#2563eb',
-                              border: '1px solid rgba(37, 99, 235, 0.3)',
-                              borderRadius: 'var(--radius-sm)',
-                              cursor: 'pointer'
-                            }}
-                            title="Move back to Unprocessed"
-                          >
-                            <RotateCcw size={10} />
-                            <span>Undo</span>
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   );
                 })
@@ -536,10 +680,12 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                   <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
                     {totalRowsSum} rows
                   </td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 800 }}>
+                    {fmtUsd(totalCostSum)}
+                  </td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#2563eb' }}>
                     {fmtUsd(totalInvoiceSum)}
                   </td>
-                  <td style={{ textAlign: 'center' }}>—</td>
                   <td style={{ textAlign: 'center' }}>—</td>
                 </tr>
               </tfoot>

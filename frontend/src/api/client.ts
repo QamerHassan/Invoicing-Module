@@ -461,10 +461,11 @@ export const api = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
-  async getProcessedProfiles(groupOwnerCode?: number, monthYear: string = 'OCT26'): Promise<ProfileInvoiceProcessedProfileDto[]> {
+  async getProcessedProfiles(groupOwnerCode?: number, monthYear: string = 'OCT26', forceRefresh: boolean = false): Promise<ProfileInvoiceProcessedProfileDto[]> {
     const encoded = encodeURIComponent(monthYear || 'OCT26');
     const grpParam = groupOwnerCode && groupOwnerCode > 0 ? `&groupOwnerCode=${groupOwnerCode}&ownerCode=${groupOwnerCode}` : '';
-    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/processed-profiles?month=${encoded}&monthYear=${encoded}${grpParam}&_t=${Date.now()}`, {
+    const forceParam = forceRefresh ? '&forceRefresh=true' : '';
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/processed-profiles?month=${encoded}&monthYear=${encoded}${grpParam}${forceParam}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),

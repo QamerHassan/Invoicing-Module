@@ -471,7 +471,7 @@ public class ProfileInvoicesController : ControllerBase
             return Ok(rows);
         }
 
-        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, ct);
+        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, forceRefresh: false, ct);
         return Ok(profiles);
     }
 
@@ -486,6 +486,7 @@ public class ProfileInvoicesController : ControllerBase
         [FromQuery] string? monthYear = null,
         [FromQuery] int? groupOwnerCode = null,
         [FromQuery] int? ownerCode = null,
+        [FromQuery] bool forceRefresh = false,
         CancellationToken ct = default)
     {
         string selectedMonth = !string.IsNullOrWhiteSpace(month) ? month : (!string.IsNullOrWhiteSpace(monthYear) ? monthYear : string.Empty);
@@ -493,7 +494,7 @@ public class ProfileInvoicesController : ControllerBase
             selectedMonth = DateTime.UtcNow.ToString("MMMyy").ToUpperInvariant();
 
         int? effectiveOwner = (ownerCode.HasValue && ownerCode.Value > 0) ? ownerCode : groupOwnerCode;
-        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, ct);
+        var profiles = await _profileInvoicingService.GetProcessedProfilesAsync(selectedMonth, effectiveOwner, forceRefresh, ct);
         return Ok(profiles);
     }
 

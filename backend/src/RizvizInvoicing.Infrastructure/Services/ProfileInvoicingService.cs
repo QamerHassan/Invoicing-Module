@@ -25,6 +25,13 @@ public class ProfileInvoicingService : IProfileInvoicingService
         _db = db;
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, List<ProfileInvoiceProcessedProfileDto> Data)> _processedProfilesCache = new();
+
+    public static void InvalidateProcessedProfilesCache()
+    {
+        _processedProfilesCache.Clear();
+    }
+
     public async Task<ProfileInvoiceDryRunResult> CalculateDryRunAsync(
         int groupOwnerCode, string monthYear, bool bypassDuplicateGuard = false, CancellationToken ct = default)
     {
@@ -3191,15 +3198,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
                     if (r.IsIncluded != false)
                     {
-                        if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                        if (r.ActualCharges.HasValue)
                         {
-                            ws.Cell(currentRow, 9).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(G{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(G{currentRow}, 0))";
-                            ws.Cell(currentRow, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                            ws.Cell(currentRow, 9).Style.NumberFormat.Format = numFmt;
-                        }
-                        else if (r.ActualCharges.HasValue)
-                        {
-                            ws.Cell(currentRow, 9).FormulaA1 = $"ROUND(G{currentRow}, 0)";
+                            ws.Cell(currentRow, 9).SetValue(r.ActualCharges.Value);
                             ws.Cell(currentRow, 9).Style.Font.FontColor = XLColor.FromHtml(redColor);
                             ws.Cell(currentRow, 9).Style.NumberFormat.Format = numFmt;
                         }
@@ -3273,15 +3274,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
                     if (r.IsIncluded != false)
                     {
-                        if (r.ActualCharges.HasValue && r.MonthDays.HasValue && r.MonthDays.Value > 0 && r.ProDays.HasValue)
+                        if (r.ActualCharges.HasValue)
                         {
-                            ws.Cell(currentRow, 8).FormulaA1 = $"IF({r.MonthDays.Value}>0, ROUND(F{currentRow} / {r.MonthDays.Value} * {r.ProDays.Value}, 0), ROUND(F{currentRow}, 0))";
-                            ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
-                            ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
-                        }
-                        else if (r.ActualCharges.HasValue)
-                        {
-                            ws.Cell(currentRow, 8).FormulaA1 = $"ROUND(F{currentRow}, 0)";
+                            ws.Cell(currentRow, 8).SetValue(r.ActualCharges.Value);
                             ws.Cell(currentRow, 8).Style.Font.FontColor = XLColor.FromHtml(redColor);
                             ws.Cell(currentRow, 8).Style.NumberFormat.Format = numFmt;
                         }
@@ -3454,9 +3449,20 @@ public class ProfileInvoicingService : IProfileInvoicingService
     }
 
     public async Task<List<ProfileInvoiceProcessedProfileDto>> GetProcessedProfilesAsync(
-        string month, int? groupOwnerCode = null, CancellationToken ct = default)
+        string month, int? groupOwnerCode = null, bool forceRefresh = false, CancellationToken ct = default)
     {
         string cleanMonth = (month ?? "").Trim().Replace("-", "").ToUpperInvariant();
+        int gCode = groupOwnerCode ?? 0;
+        string cacheKey = $"{cleanMonth}_{gCode}";
+
+        if (!forceRefresh && _processedProfilesCache.TryGetValue(cacheKey, out var cachedEntry))
+        {
+            if ((DateTime.UtcNow - cachedEntry.CachedAt).TotalMinutes < 60)
+            {
+                return cachedEntry.Data;
+            }
+        }
+
         var list = new List<ProfileInvoiceProcessedProfileDto>();
 
         var conn = _db.Database.GetDbConnection();
@@ -3563,7 +3569,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
             });
         }
 
-        return list.OrderBy(p => p.OwnerName).ToList();
+        var sortedList = list.OrderBy(p => p.OwnerName).ToList();
+        _processedProfilesCache[cacheKey] = (DateTime.UtcNow, sortedList);
+        return sortedList;
     }
 
     public async Task<(int UnprocessedCount, decimal UnprocessedUsd, string OwnerName)> GetOwnerUnprocessedStatusAsync(
@@ -4303,6 +4311,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        InvalidateProcessedProfilesCache();
         return (true, $"{updatedCount} invoice(s) processed successfully.", updatedCount);
     }
 
@@ -4420,6 +4429,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        InvalidateProcessedProfilesCache();
         return (true, $"{updatedCount} invoice(s) moved back to active.", updatedCount);
     }
 
