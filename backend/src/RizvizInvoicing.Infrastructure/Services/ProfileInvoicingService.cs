@@ -606,11 +606,25 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 var cnt = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct) ?? 0);
                 if (cnt > 0)
                 {
-                    await tx.RollbackAsync(ct);
-                    saveResult.Success = false;
-                    saveResult.ErrorMessage =
-                        $"Invoices already exist for Group Owner {request.GroupOwnerCode} / {monthYear} ({cnt} rows). Save is blocked.";
-                    return saveResult;
+                    if (!request.ForceRecalculate)
+                    {
+                        await tx.RollbackAsync(ct);
+                        saveResult.Success = false;
+                        saveResult.ErrorMessage =
+                            $"Invoices already exist for Group Owner {request.GroupOwnerCode} / {monthYear} ({cnt} rows). Save is blocked.";
+                        return saveResult;
+                    }
+
+                    // ForceRecalculate = true: delete existing rows first (PB "Fresh Calculation")
+                    using var delCmd = conn.CreateCommand();
+                    delCmd.Transaction = tx;
+                    delCmd.CommandText = @"
+                        DELETE FROM dbo.Profile_invoicing
+                        WHERE prfgrp_own_code = @grp
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m";
+                    delCmd.Parameters.Add(new SqlParameter("@grp", request.GroupOwnerCode));
+                    delCmd.Parameters.Add(new SqlParameter("@m", monthYear.Replace("-", "")));
+                    await delCmd.ExecuteNonQueryAsync(ct);
                 }
             }
 

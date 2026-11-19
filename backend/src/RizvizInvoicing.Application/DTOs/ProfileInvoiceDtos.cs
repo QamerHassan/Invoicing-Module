@@ -85,6 +85,12 @@ public class ProfileInvoiceSaveRequest
 
     /// <summary>Username of the user posting the invoices (stored in insert_by).</summary>
     public string InsertedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When true: delete existing rows for this owner+month then re-insert fresh ones.
+    /// Mirrors PowerBuilder "Fresh Calculation" behaviour.
+    /// </summary>
+    public bool ForceRecalculate { get; set; } = false;
 }
 
 /// <summary>

@@ -352,8 +352,8 @@ export const api = {
     return handleResponse<ProfileGroupOwnerDto[]>(res);
   },
 
-  async getProfileInvoiceDryRun(groupOwnerCode: number, month: string): Promise<ProfileInvoiceDryRunResult> {
-    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/calculate-dry-run?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&_t=${Date.now()}`, {
+  async getProfileInvoiceDryRun(groupOwnerCode: number, month: string, bypassDuplicateGuard = false): Promise<ProfileInvoiceDryRunResult> {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/calculate-dry-run?groupOwnerCode=${groupOwnerCode}&month=${encodeURIComponent(month)}&bypassDuplicateGuard=${bypassDuplicateGuard}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),

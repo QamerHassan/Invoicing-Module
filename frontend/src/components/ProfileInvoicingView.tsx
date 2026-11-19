@@ -235,10 +235,20 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       setSuccessMsg(null);
       const dryRun = await api.getProfileInvoiceDryRun(Number(selectedOwnerCode), cleanMonth);
       if (dryRun.alreadyExists) {
-        setRows([]);
-        setServerTotalUsd(null);
-        setServerTotalPkr(null);
-        setWarning(dryRun.warningMessage || `Invoices already exist for this Profile Group Owner and Month (${cleanMonth}). Duplicate generation stopped.`);
+        // PowerBuilder behaviour: ask user if they want to recalculate
+        const recalc = window.confirm(
+          `Invoice data already exists for this Profile Group Owner and Month (${cleanMonth}).\n\nDo you want to recalculate the invoice for this Profile Group Owner?`
+        );
+        if (!recalc) {
+          setWarning(`Invoices already exist for ${cleanMonth}. Use "Load Saved" to view existing data.`);
+          return;
+        }
+        // User said Yes — bypass guard and recalculate
+        const freshDryRun = await api.getProfileInvoiceDryRun(Number(selectedOwnerCode), cleanMonth, true);
+        setRows(freshDryRun.rows);
+        setServerTotalUsd(freshDryRun.totalUsdSum);
+        setServerTotalPkr(freshDryRun.totalPkrSum);
+        setSuccessMsg(`Recalculated ${freshDryRun.rows.length} row(s) in preview mode.`);
       } else {
         setRows(dryRun.rows);
         setServerTotalUsd(dryRun.totalUsdSum);
@@ -254,7 +264,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
   };
 
   // 3. Save & Post Invoices
-  const handleSaveInvoices = async () => {
+  const handleSaveInvoices = async (forceRecalculate = false) => {
     if (!selectedOwnerCode) {
       setError('Please select a Profile Group Owner.');
       return;
@@ -264,10 +274,12 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       return;
     }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to Save & Post ${rows.length} invoice rows for ${formatMonthDisplay(cleanMonth)}?\nOnce posted (status='P'), rows cannot be deleted or re-generated.`
-    );
-    if (!confirmed) return;
+    if (!forceRecalculate) {
+      const confirmed = window.confirm(
+        `Are you sure you want to Save & Post ${rows.length} invoice rows for ${formatMonthDisplay(cleanMonth)}?\nOnce posted (status='P'), rows cannot be deleted or re-generated.`
+      );
+      if (!confirmed) return;
+    }
 
     try {
       setSaving(true);
@@ -277,13 +289,22 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       const result = await api.saveProfileInvoices({
         groupOwnerCode: Number(selectedOwnerCode),
         monthYear: cleanMonth,
-        insertedBy: user.username || 'System'
+        insertedBy: user.username || 'System',
+        forceRecalculate
       });
 
       if (result.success) {
         setSuccessMsg(`Successfully posted ${result.rowsInserted} invoice row(s) (PCOM: ${result.firstPcomCode} - ${result.lastPcomCode})!`);
         // Refresh with saved data
         await handleLoadSaved();
+      } else if (result.errorMessage?.includes('already exist')) {
+        // PowerBuilder "Fresh Calculation" popup
+        const deleteFresh = window.confirm(
+          `Invoices already exist for this Profile Group Owner and month.\n\nDo you want to delete the old invoices and save fresh invoices?`
+        );
+        if (deleteFresh) {
+          await handleSaveInvoices(true);
+        }
       } else {
         setError(result.errorMessage || 'Failed to save profile invoices.');
       }
@@ -727,7 +748,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
               </button>
 
               <button
-                onClick={handleSaveInvoices}
+                onClick={() => handleSaveInvoices()}
                 disabled={loading || saving || rows.length === 0}
                 style={{
                   background: '#10b981',

@@ -193,6 +193,7 @@ export interface ProfileInvoiceSaveRequest {
   groupOwnerCode: number;
   monthYear: string;
   insertedBy: string;
+  forceRecalculate?: boolean;
 }
 
 export interface ProfileInvoiceSavedRowDto {
