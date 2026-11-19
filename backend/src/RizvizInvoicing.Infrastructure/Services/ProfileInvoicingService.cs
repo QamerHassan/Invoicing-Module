@@ -2602,18 +2602,46 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 bool hasSavedApplied = manualAppliedOverrides.TryGetValue(curProj, out var manApp);
                 bool hasSavedActual = manualActualOverrides.TryGetValue(curProj, out var manAct);
 
-                if (hasSavedApplied || hasSavedActual)
+                // Applied Charges: strictly takes saved applied_charges (manApp) if saved,
+                // otherwise falls back to agreed rate (curProjRate). NEVER impacted by actualCharges.
+                if (hasSavedApplied)
                 {
-                    // Already in table! Strictly use what is in table, do NOT take from agreed rate!
-                    projectApplied = hasSavedApplied ? manApp : manAct;
-                    actualCharges = hasSavedActual ? manAct : manApp;
+                    projectApplied = manApp;
                 }
                 else
                 {
-                    // First time: not in table yet!
-                    // Take from agreed charges (curProjRate)
                     projectApplied = curProjRate > 0 ? curProjRate : null;
-                    actualCharges = curProjRate > 0 ? curProjRate : null;
+                }
+
+                // Actual Charges: if user manually edited & saved actual_charges (hasSavedActual),
+                // forcefully use whatever is saved in actual_charges (manAct) without any alteration.
+                if (hasSavedActual)
+                {
+                    actualCharges = manAct;
+                }
+                else if (hasSavedApplied)
+                {
+                    // If only applied was saved, actual charges follows applied (or prorated applied if proDays/monthDays exist)
+                    if (pDays.HasValue && mDays.HasValue && mDays.Value > 0)
+                    {
+                        actualCharges = Math.Round(manApp / (decimal)mDays.Value * (decimal)pDays.Value, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else
+                    {
+                        actualCharges = manApp;
+                    }
+                }
+                else
+                {
+                    // Neither saved: fallback to agreed rate (prorated if days exist)
+                    if (pDays.HasValue && mDays.HasValue && mDays.Value > 0 && curProjRate > 0)
+                    {
+                        actualCharges = Math.Round(curProjRate / (decimal)mDays.Value * (decimal)pDays.Value, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else
+                    {
+                        actualCharges = curProjRate > 0 ? curProjRate : null;
+                    }
                 }
 
                 if (actualCharges.HasValue)

@@ -682,7 +682,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
           }
           req.actualCharges = computedActualPP;
         }
-        else if (field === 'actualCharges' && !isNaN(num)) req.actualCharges = num;
+        else if (field === 'actualCharges' && !isNaN(num)) {
+          req.actualCharges = num;
+          delete req.appliedCharges; // Actual edit has ZERO impact on applied
+        }
         else if (field === 'hoursDays' && value) {
           const parts = value.trim().split('/');
           if (parts.length === 2) {
