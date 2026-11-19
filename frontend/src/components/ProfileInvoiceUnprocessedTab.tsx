@@ -241,7 +241,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
                     </div>
                   </th>
 
-                  {/* Column 3: Pending Rows banner */}
+                  {/* Column 3: Total Invoices banner */}
                   <th
                     style={{
                       borderRight: '1px solid var(--border-subtle)',
@@ -253,7 +253,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
-                        PENDING ROWS
+                        TOTAL INVOICES
                       </span>
                       <span style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0284c7', fontFamily: 'var(--font-mono)' }}>
                         {result.totalPendingRows}
@@ -261,7 +261,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
                     </div>
                   </th>
 
-                  {/* Column 4: Pending USD banner */}
+                  {/* Column 4: Total Invoice banner */}
                   <th
                     style={{
                       borderRight: '1px solid var(--border-subtle)',
@@ -273,7 +273,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
-                        TOTAL PENDING USD
+                        TOTAL INVOICE
                       </span>
                       <span style={{ fontSize: '1.20rem', fontWeight: 900, color: '#dc2626', fontFamily: 'var(--font-mono)' }}>
                         {formatMoney(result.totalPendingUsd)}
@@ -294,8 +294,8 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
               <tr className="column-header-row">
                 <th style={{ textAlign: 'left', minWidth: '160px' }}>Profile Owner</th>
                 <th style={{ textAlign: 'right', minWidth: '120px' }}>Total Cost</th>
-                <th style={{ textAlign: 'right', minWidth: '100px' }}>Pending Rows</th>
-                <th style={{ textAlign: 'right', minWidth: '125px' }}>Pending USD</th>
+                <th style={{ textAlign: 'right', minWidth: '100px' }}>Total Invoices</th>
+                <th style={{ textAlign: 'right', minWidth: '125px' }}>Total Invoice</th>
                 <th style={{ textAlign: 'center', width: '80px' }}>Action</th>
               </tr>
             </thead>

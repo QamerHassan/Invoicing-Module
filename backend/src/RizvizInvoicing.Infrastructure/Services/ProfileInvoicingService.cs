@@ -3815,22 +3815,54 @@ public class ProfileInvoicingService : IProfileInvoicingService
             LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = ng.prfown_code
             ORDER BY profile_name, prfown_code";
         cmd.Parameters.Add(new SqlParameter("@m", cleanMonth));
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using (var reader = await cmd.ExecuteReaderAsync(ct))
         {
-            var row = new ProfileInvoiceUnprocessedRowDto
+            while (await reader.ReadAsync(ct))
             {
-                PrfownCode = Convert.ToInt32(reader.GetValue(0)),
-                ProfileName = reader.GetString(1).Trim(),
-                InvoiceMonth = reader.GetString(2).Trim(),
-                CompanyRows = Convert.ToInt32(reader.GetValue(3)),
-                InterviewRows = Convert.ToInt32(reader.GetValue(4)),
-                RecurringRows = Convert.ToInt32(reader.GetValue(5)),
-                PendingRows = Convert.ToInt32(reader.GetValue(6)),
-                TotalPendingUsd = Convert.ToDecimal(reader.GetValue(7)),
-                TotalCost = Convert.ToDecimal(reader.GetValue(8))
-            };
-            result.Rows.Add(row);
+                var row = new ProfileInvoiceUnprocessedRowDto
+                {
+                    PrfownCode = Convert.ToInt32(reader.GetValue(0)),
+                    ProfileName = reader.GetString(1).Trim(),
+                    InvoiceMonth = reader.GetString(2).Trim(),
+                    CompanyRows = Convert.ToInt32(reader.GetValue(3)),
+                    InterviewRows = Convert.ToInt32(reader.GetValue(4)),
+                    RecurringRows = Convert.ToInt32(reader.GetValue(5)),
+                    PendingRows = Convert.ToInt32(reader.GetValue(6)),
+                    TotalPendingUsd = Convert.ToDecimal(reader.GetValue(7)),
+                    TotalCost = Convert.ToDecimal(reader.GetValue(8))
+                };
+                result.Rows.Add(row);
+            }
+        }
+
+        // For owners whose invoices have been generated, sync TotalPendingUsd and TotalCost
+        // with the exact Total Invoice shown on Excel Sheet View (TOTAL ACTUAL + TOTAL OTHER).
+        foreach (var row in result.Rows)
+        {
+            try
+            {
+                var view = await GetExcelViewAsync(row.PrfownCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
+                if (view != null && view.Rows.Count > 0)
+                {
+                    decimal normalizedOtherSum = view.Rows
+                        .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
+                                    && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
+                        .Sum(r => r.OtherCharge!.Value);
+                    decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
+                    if (normalizedTotalInvoice > 0)
+                    {
+                        row.TotalPendingUsd = normalizedTotalInvoice;
+                    }
+                    if (view.TotalCostSum > 0)
+                    {
+                        row.TotalCost = view.TotalCostSum;
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to source table aggregations
+            }
         }
 
         result.TotalUnprocessedOwners = result.Rows.Count;

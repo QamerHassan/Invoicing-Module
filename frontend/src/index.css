@@ -71,6 +71,10 @@
   --excel-actual-color: #f87171;
   --excel-proj-color: #f87171;
   --excel-non-servicenow-color: #f87171;
+
+  /* Universal Table Row Focus / Hover (Dark Mode) */
+  --table-row-hover-bg: #22324e;
+  --table-row-hover-shadow: inset 3px 0 0 #6366f1;
 }
 
 /* ─── Light Theme ─────────────────────────────────────────── */
@@ -84,6 +88,10 @@
   --border-subtle: rgba(0, 0, 0, 0.08);
   --border-medium: rgba(0, 0, 0, 0.15);
   --border-focus: #6366f1;
+
+  /* Universal Table Row Focus / Hover (Light Mode - distinct dark slate focus) */
+  --table-row-hover-bg: #b9c9df;
+  --table-row-hover-shadow: inset 3px 0 0 #2563eb;
 
   --accent-primary: #6366f1;
   --accent-primary-hover: #4f46e5;
@@ -608,12 +616,25 @@ button:disabled {
   border-bottom: none;
 }
 
-.data-table tbody tr {
-  transition: background-color var(--transition-fast);
+/* ─── Universal Table Row Focus & Dark Hover across entire application ─── */
+table tbody tr {
+  transition: background-color 0.12s ease;
 }
 
-.data-table tbody tr:hover td {
-  background-color: var(--bg-surface-hover);
+table tbody tr:not(.summary-header-row):not(.column-header-row):not(.excel-blank-row):hover,
+table tbody tr:not(.summary-header-row):not(.column-header-row):not(.excel-blank-row):hover > td,
+.data-table tbody tr:not(.summary-header-row):not(.column-header-row):hover,
+.data-table tbody tr:not(.summary-header-row):not(.column-header-row):hover > td,
+.compact-table tbody tr:not(.summary-header-row):not(.column-header-row):hover,
+.compact-table tbody tr:not(.summary-header-row):not(.column-header-row):hover > td,
+tr.table-row-hover:not(.summary-header-row):not(.column-header-row):hover,
+tr.table-row-hover:not(.summary-header-row):not(.column-header-row):hover > td {
+  background-color: var(--table-row-hover-bg) !important;
+  box-shadow: var(--table-row-hover-shadow);
+}
+
+table tbody tr:not(.summary-header-row):not(.column-header-row):hover input:not(:focus) {
+  background-color: transparent !important;
 }
 
 /* Foreign Branch (Branch 5) Highlight Utilities */
