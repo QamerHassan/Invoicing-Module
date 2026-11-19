@@ -749,15 +749,31 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   };
 
   const handleManualSave = async () => {
-    if (!data || !hasUnsavedChanges || isSavingChanges) return;
+    if (!data || isSavingChanges) return;
     setIsSavingChanges(true);
     setError(null);
     try {
-      // 1. Commit pending project updates
-      for (const [projectCode, req] of pendingProjectUpdates.entries()) {
+      // 1. Gather all project headers from data.rows to ensure everything visible on the sheet is persisted
+      const allProjectUpdates = new Map(pendingProjectUpdates);
+      data.rows.forEach(r => {
+        if (r.rowType === 'ProjectHeader' && r.projectCode && !allProjectUpdates.has(r.projectCode)) {
+          allProjectUpdates.set(r.projectCode, {
+            monthYear: cleanMonth,
+            groupOwnerCode: Number(selectedOwnerCode),
+            agreedRate: r.agreedRate ?? undefined,
+            appliedCharges: r.appliedCharges ?? undefined,
+            actualCharges: r.actualCharges ?? undefined,
+            salaryRate: r.salaryRate || undefined,
+            projStatus: r.projStatus || undefined
+          });
+        }
+      });
+
+      // 2. Commit all project updates
+      for (const [projectCode, req] of allProjectUpdates.entries()) {
         await api.updateProfileInvoiceProject(projectCode, req);
       }
-      // 2. Commit pending row updates
+      // 3. Commit pending row updates
       for (const [code, req] of pendingRowUpdates.entries()) {
         await api.updateProfileInvoiceRow(code, req);
       }
@@ -1138,28 +1154,41 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
     const codes = getSelectedCodes();
     if (codes.length === 0) return;
 
-    // 2. Commit all pending project and row changes (everything regular Save button saves)
-    if (pendingProjectUpdates.size > 0 || pendingRowUpdates.size > 0) {
-      setIsSavingChanges(true);
-      try {
-        for (const [projCode, updateReq] of pendingProjectUpdates.entries()) {
-          await api.updateProfileInvoiceProject(projCode, updateReq);
+    // 2. Commit all project and row changes (ensuring all visible sheet projects are persisted)
+    setIsSavingChanges(true);
+    try {
+      const allProjectUpdates = new Map(pendingProjectUpdates);
+      data.rows.forEach(r => {
+        if (r.rowType === 'ProjectHeader' && r.projectCode && !allProjectUpdates.has(r.projectCode)) {
+          allProjectUpdates.set(r.projectCode, {
+            monthYear: cleanMonth,
+            groupOwnerCode: Number(selectedOwnerCode),
+            agreedRate: r.agreedRate ?? undefined,
+            appliedCharges: r.appliedCharges ?? undefined,
+            actualCharges: r.actualCharges ?? undefined,
+            salaryRate: r.salaryRate || undefined,
+            projStatus: r.projStatus || undefined
+          });
         }
-        for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
-          await api.updateProfileInvoiceRow(rowCode, updateReq);
-        }
-        setPendingProjectUpdates(new Map());
-        setPendingRowUpdates(new Map());
-        setSaveSuccessMsg('All changes saved successfully!');
-        setTimeout(() => setSaveSuccessMsg(null), 3000);
-      } catch (saveErr: any) {
-        console.error('Pending save before process & email error:', saveErr);
-        flashMsg('error', saveErr?.message || 'Failed to save pending changes.');
-        setIsSavingChanges(false);
-        return;
-      } finally {
-        setIsSavingChanges(false);
+      });
+
+      for (const [projCode, updateReq] of allProjectUpdates.entries()) {
+        await api.updateProfileInvoiceProject(projCode, updateReq);
       }
+      for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
+        await api.updateProfileInvoiceRow(rowCode, updateReq);
+      }
+      setPendingProjectUpdates(new Map());
+      setPendingRowUpdates(new Map());
+      setSaveSuccessMsg('All changes saved successfully!');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    } catch (saveErr: any) {
+      console.error('Pending save before process & email error:', saveErr);
+      flashMsg('error', saveErr?.message || 'Failed to save pending changes.');
+      setIsSavingChanges(false);
+      return;
+    } finally {
+      setIsSavingChanges(false);
     }
 
     // 3. Move selected rows to Processed (is_processed = 1)

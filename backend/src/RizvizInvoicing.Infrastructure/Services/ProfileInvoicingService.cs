@@ -1670,48 +1670,43 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
+            int effectiveGrp = groupOwnerCode > 0 ? groupOwnerCode : (request.GroupOwnerCode > 0 ? request.GroupOwnerCode : 0);
+
             // Update Applied Charges in applied_charges on dbo.Profile_invoicing
-            // Rule: ONLY save on the Job Holder (resource_type = 'JH') row of that project!
-            // When applied charges change, actual charges in the JH row also gets the exact same value.
+            // Rule: Target the primary row (preferring Job Holder 'JH', fallback to 'SL' or lowest code)
+            // When applied charges change, actual charges on target row also gets updated accordingly.
             if (request.AppliedCharges.HasValue)
             {
                 using var cmdApplied = conn.CreateCommand();
                 cmdApplied.Transaction = (DbTransaction)tx;
                 cmdApplied.CommandText = @"
-                    -- 1. Update the Job Holder row
-                    UPDATE dbo.Profile_invoicing 
-                    SET applied_charges = @applied,
-                        actual_charges = @actual,
-                        last_modified_by = @user,
-                        last_modified_time = GETDATE()
+                    DECLARE @targetCode int = NULL;
+
+                    SELECT TOP 1 @targetCode = cmp_prof_invoice_code 
+                    FROM dbo.Profile_invoicing 
                     WHERE project_code = @p 
                       AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                      AND resource_type = 'JH';
+                      AND (@grp = 0 OR prfgrp_own_code = @grp OR prfown_code = @grp)
+                    ORDER BY CASE WHEN resource_type = 'JH' THEN 1 WHEN resource_type = 'SL' THEN 2 ELSE 3 END, cmp_prof_invoice_code ASC;
 
-                    -- 1b. Fallback: if no JH row exists, update the primary row
-                    IF @@ROWCOUNT = 0
+                    IF @targetCode IS NOT NULL
                     BEGIN
                         UPDATE dbo.Profile_invoicing 
                         SET applied_charges = @applied,
                             actual_charges = @actual,
                             last_modified_by = @user,
                             last_modified_time = GETDATE()
-                        WHERE cmp_prof_invoice_code = (
-                            SELECT TOP 1 cmp_prof_invoice_code 
-                            FROM dbo.Profile_invoicing 
-                            WHERE project_code = @p 
-                              AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                            ORDER BY CASE WHEN resource_type = 'SL' THEN 1 ELSE 2 END, cmp_prof_invoice_code
-                        );
-                    END
+                        WHERE cmp_prof_invoice_code = @targetCode;
 
-                    -- 2. Ensure non-JH rows do NOT keep applied_charges or actual_charges
-                    UPDATE dbo.Profile_invoicing
-                    SET applied_charges = NULL,
-                        actual_charges = NULL
-                    WHERE project_code = @p 
-                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                      AND resource_type <> 'JH';";
+                        -- Clean up only the other child rows of this project so they don't keep duplicate applied/actual
+                        UPDATE dbo.Profile_invoicing
+                        SET applied_charges = NULL,
+                            actual_charges = NULL
+                        WHERE project_code = @p 
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                          AND (@grp = 0 OR prfgrp_own_code = @grp OR prfown_code = @grp)
+                          AND cmp_prof_invoice_code <> @targetCode;
+                    END";
 
                 int appVal = (int)Math.Round(request.AppliedCharges.Value, 0, MidpointRounding.AwayFromZero);
                 int actVal = request.ActualCharges.HasValue ? (int)Math.Round(request.ActualCharges.Value, 0, MidpointRounding.AwayFromZero) : appVal;
@@ -1720,6 +1715,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 cmdApplied.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
                 cmdApplied.Parameters.Add(Param("@p", projectCode));
                 cmdApplied.Parameters.Add(Param("@m", cleanMonth));
+                cmdApplied.Parameters.Add(Param("@grp", effectiveGrp));
                 await cmdApplied.ExecuteNonQueryAsync(ct);
             }
             else if (request.ActualCharges.HasValue)
@@ -1727,39 +1723,37 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 using var cmdActual = conn.CreateCommand();
                 cmdActual.Transaction = (DbTransaction)tx;
                 cmdActual.CommandText = @"
-                    UPDATE dbo.Profile_invoicing 
-                    SET actual_charges = @actual,
-                        last_modified_by = @user,
-                        last_modified_time = GETDATE()
+                    DECLARE @targetCode int = NULL;
+
+                    SELECT TOP 1 @targetCode = cmp_prof_invoice_code 
+                    FROM dbo.Profile_invoicing 
                     WHERE project_code = @p 
                       AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                      AND resource_type = 'JH';
+                      AND (@grp = 0 OR prfgrp_own_code = @grp OR prfown_code = @grp)
+                    ORDER BY CASE WHEN resource_type = 'JH' THEN 1 WHEN resource_type = 'SL' THEN 2 ELSE 3 END, cmp_prof_invoice_code ASC;
 
-                    IF @@ROWCOUNT = 0
+                    IF @targetCode IS NOT NULL
                     BEGIN
                         UPDATE dbo.Profile_invoicing 
                         SET actual_charges = @actual,
                             last_modified_by = @user,
                             last_modified_time = GETDATE()
-                        WHERE cmp_prof_invoice_code = (
-                            SELECT TOP 1 cmp_prof_invoice_code 
-                            FROM dbo.Profile_invoicing 
-                            WHERE project_code = @p 
-                              AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                            ORDER BY CASE WHEN resource_type = 'SL' THEN 1 ELSE 2 END, cmp_prof_invoice_code
-                        );
-                    END
+                        WHERE cmp_prof_invoice_code = @targetCode;
 
-                    UPDATE dbo.Profile_invoicing
-                    SET actual_charges = NULL
-                    WHERE project_code = @p 
-                      AND REPLACE(RTRIM(invoice_month), '-', '') = @m
-                      AND resource_type <> 'JH';";
+                        -- Clean up only other child rows so they don't keep duplicate actual
+                        UPDATE dbo.Profile_invoicing
+                        SET actual_charges = NULL
+                        WHERE project_code = @p 
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = @m
+                          AND (@grp = 0 OR prfgrp_own_code = @grp OR prfown_code = @grp)
+                          AND cmp_prof_invoice_code <> @targetCode;
+                    END";
 
                 cmdActual.Parameters.Add(Param("@actual", (int)Math.Round(request.ActualCharges.Value, 0, MidpointRounding.AwayFromZero)));
                 cmdActual.Parameters.Add(Param("@user", string.IsNullOrWhiteSpace(username) ? "System" : (username.Length > 20 ? username.Substring(0, 20) : username)));
                 cmdActual.Parameters.Add(Param("@p", projectCode));
                 cmdActual.Parameters.Add(Param("@m", cleanMonth));
+                cmdActual.Parameters.Add(Param("@grp", effectiveGrp));
                 await cmdActual.ExecuteNonQueryAsync(ct);
             }
 
@@ -4413,6 +4407,91 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
                 updatedCount++;
             }
+        }
+
+        // ── Auto-populate applied_charges and actual_charges for any project in these processed rows that doesn't have them yet ──
+        if (codes.Count > 0)
+        {
+            try
+            {
+                using var cmdSync = conn.CreateCommand();
+                cmdSync.CommandText = @"
+                    ;WITH DistinctProjects AS (
+                        SELECT DISTINCT project_code, invoice_month, prfgrp_own_code
+                        FROM dbo.Profile_invoicing
+                        WHERE cmp_prof_invoice_code IN (" + string.Join(",", codes.Distinct()) + @")
+                          AND project_code IS NOT NULL AND project_code > 0
+                    )
+                    SELECT dp.project_code, dp.invoice_month, dp.prfgrp_own_code, ISNULL(p.proj_rate, 0),
+                           (SELECT TOP 1 pin.pro_rate_days FROM mkt.project_invoicing pin WHERE pin.project_code = dp.project_code AND REPLACE(RTRIM(pin.month_year), '-', '') = REPLACE(RTRIM(dp.invoice_month), '-', '') AND pin.resource_type IN ('JH', 'SL')),
+                           (SELECT TOP 1 pin.month_days FROM mkt.project_invoicing pin WHERE pin.project_code = dp.project_code AND REPLACE(RTRIM(pin.month_year), '-', '') = REPLACE(RTRIM(dp.invoice_month), '-', '') AND pin.resource_type IN ('JH', 'SL')),
+                           (SELECT TOP 1 pi.cmp_prof_invoice_code FROM dbo.Profile_invoicing pi WHERE pi.project_code = dp.project_code AND REPLACE(RTRIM(pi.invoice_month), '-', '') = REPLACE(RTRIM(dp.invoice_month), '-', '') AND pi.prfgrp_own_code = dp.prfgrp_own_code ORDER BY CASE WHEN pi.resource_type = 'JH' THEN 1 WHEN pi.resource_type = 'SL' THEN 2 ELSE 3 END, pi.cmp_prof_invoice_code ASC) AS target_code,
+                           (SELECT MAX(pi.applied_charges) FROM dbo.Profile_invoicing pi WHERE pi.project_code = dp.project_code AND REPLACE(RTRIM(pi.invoice_month), '-', '') = REPLACE(RTRIM(dp.invoice_month), '-', '') AND pi.prfgrp_own_code = dp.prfgrp_own_code) AS cur_applied,
+                           (SELECT MAX(pi.actual_charges) FROM dbo.Profile_invoicing pi WHERE pi.project_code = dp.project_code AND REPLACE(RTRIM(pi.invoice_month), '-', '') = REPLACE(RTRIM(dp.invoice_month), '-', '') AND pi.prfgrp_own_code = dp.prfgrp_own_code) AS cur_actual
+                    FROM DistinctProjects dp
+                    JOIN mkt.Projects p ON p.project_code = dp.project_code";
+
+                var updatesToApply = new List<(long TargetCode, int Applied, int Actual, int ProjCode, string Month, int Grp)>();
+                using (var rdr = await cmdSync.ExecuteReaderAsync(ct))
+                {
+                    while (await rdr.ReadAsync(ct))
+                    {
+                        int prjCode = rdr.GetInt32(0);
+                        string invM = rdr.GetString(1);
+                        int grpCode = rdr.GetInt32(2);
+                        decimal pRate = Convert.ToDecimal(rdr.GetValue(3));
+                        int? pDays = rdr.IsDBNull(4) ? null : rdr.GetInt32(4);
+                        int? mDays = rdr.IsDBNull(5) ? null : rdr.GetInt32(5);
+                        long? tCode = rdr.IsDBNull(6) ? null : Convert.ToInt64(rdr.GetValue(6));
+                        int? curApp = rdr.IsDBNull(7) ? null : rdr.GetInt32(7);
+                        int? curAct = rdr.IsDBNull(8) ? null : rdr.GetInt32(8);
+
+                        if (!tCode.HasValue || tCode.Value <= 0) continue;
+
+                        int appliedVal = curApp ?? (int)Math.Round(pRate);
+                        int actualVal = curAct ?? (
+                            (pDays.HasValue && mDays.HasValue && mDays.Value > 0)
+                                ? (int)Math.Round((float)pRate / mDays.Value * pDays.Value)
+                                : appliedVal
+                        );
+
+                        if (curApp == null || curAct == null)
+                        {
+                            updatesToApply.Add((tCode.Value, appliedVal, actualVal, prjCode, invM, grpCode));
+                        }
+                    }
+                }
+
+                foreach (var upd in updatesToApply)
+                {
+                    using var cmdApply = conn.CreateCommand();
+                    cmdApply.CommandText = @"
+                        UPDATE dbo.Profile_invoicing
+                        SET applied_charges = @app,
+                            actual_charges = @act,
+                            last_modified_by = @user,
+                            last_modified_time = GETDATE()
+                        WHERE cmp_prof_invoice_code = @tCode;
+
+                        UPDATE dbo.Profile_invoicing
+                        SET applied_charges = NULL,
+                            actual_charges = NULL
+                        WHERE project_code = @p
+                          AND REPLACE(RTRIM(invoice_month), '-', '') = REPLACE(RTRIM(@m), '-', '')
+                          AND prfgrp_own_code = @grp
+                          AND cmp_prof_invoice_code <> @tCode;";
+
+                    cmdApply.Parameters.Add(Param("@app", upd.Applied));
+                    cmdApply.Parameters.Add(Param("@act", upd.Actual));
+                    cmdApply.Parameters.Add(Param("@user", userLog));
+                    cmdApply.Parameters.Add(Param("@tCode", upd.TargetCode));
+                    cmdApply.Parameters.Add(Param("@p", upd.ProjCode));
+                    cmdApply.Parameters.Add(Param("@m", upd.Month));
+                    cmdApply.Parameters.Add(Param("@grp", upd.Grp));
+                    await cmdApply.ExecuteNonQueryAsync(ct);
+                }
+            }
+            catch { /* non-fatal, background charge sync */ }
         }
 
         InvalidateProcessedProfilesCache();
