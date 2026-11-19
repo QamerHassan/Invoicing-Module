@@ -2118,15 +2118,21 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
         // Lookups for Profile Owners
         var ownerCodes = savedRows.Where(r => r.PrfownCode.HasValue && r.PrfownCode.Value > 0).Select(r => r.PrfownCode!.Value).Distinct().ToList();
+        if (effectiveGroupCode > 0 && !ownerCodes.Contains(effectiveGroupCode))
+        {
+            ownerCodes.Add(effectiveGroupCode);
+        }
         var profileNames = new Dictionary<int, string>();
+        var ownerProfileTypes = new Dictionary<int, string>();
         if (ownerCodes.Count > 0)
         {
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT PrfOwn_code, profile_name FROM prof.Profile_Owners WHERE PrfOwn_code IN ({string.Join(",", ownerCodes)})";
+            cmd.CommandText = $"SELECT PrfOwn_code, profile_name, ISNULL(Profile_type, '') FROM prof.Profile_Owners WHERE PrfOwn_code IN ({string.Join(",", ownerCodes)})";
             using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 profileNames[reader.GetInt32(0)] = reader.IsDBNull(1) ? "" : reader.GetString(1).Trim();
+                ownerProfileTypes[reader.GetInt32(0)] = reader.IsDBNull(2) ? "" : reader.GetString(2).Trim().ToUpperInvariant();
             }
         }
 
@@ -2511,9 +2517,33 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
 
             // Profile Nature
-            string profileNature = (curProj > 0 && string.Equals(curProfileType?.Trim(), "E", StringComparison.OrdinalIgnoreCase))
-                ? "Executive"
-                : "";
+            // PowerBuilder logic (CHOOSE CASE Upper(Trim(ls_profile_type))):
+            // CASE "E": ls_nature = "Executive"
+            // CASE "C": ls_nature = "Real"
+            // CASE ELSE: ls_nature = ""
+            string rawType = "";
+            if (curProj > 0 && !string.IsNullOrWhiteSpace(curProfileType))
+            {
+                rawType = curProfileType.Trim().ToUpperInvariant();
+            }
+            if (string.IsNullOrWhiteSpace(rawType) && ownerProfileTypes.TryGetValue(curOwn, out var opt))
+            {
+                rawType = opt.Trim().ToUpperInvariant();
+            }
+            if (rawType != "E" && rawType != "C" && ownerProfileTypes.TryGetValue(curOwn, out var fallbackOpt))
+            {
+                if (fallbackOpt == "E" || fallbackOpt == "C")
+                {
+                    rawType = fallbackOpt;
+                }
+            }
+
+            string profileNature = rawType switch
+            {
+                "E" => "Executive",
+                "C" => "Real",
+                _ => ""
+            };
 
             // Handled From
             string handledFrom = (curProj > 0 && curBranchCode == ForeignBranchCode)
@@ -2858,6 +2888,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ExchangeRate = (isOther && dRow.IsIncluded) ? dRow.ExchangeRate : null,
                         ShareAmount = (isOther && dRow.IsIncluded) ? dRow.ShareAmount : null,
                         StartEndDate = startEndDate,
+                        ProfileNature = profileNature,
                         ToBeDiscussed = dRow.ToBeDiscussed,
                         IsToBeDiscussed = dRow.ToBeDiscussed,
                         IsProcessed = dRow.IsProcessed,
@@ -3216,6 +3247,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ws.Cell(currentRow, 13).SetValue(r.StartEndDate);
                         ws.Cell(currentRow, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 16).SetValue(r.ProfileNature);
                     if (!string.IsNullOrEmpty(r.ProjStatus))  ws.Cell(currentRow, 14).SetValue(r.ProjStatus);
                     if (!string.IsNullOrEmpty(r.JobType))     ws.Cell(currentRow, 15).SetValue(r.JobType);
                     if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 16).SetValue(r.ProfileNature);
@@ -3243,6 +3275,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ws.Cell(currentRow, 13).SetValue(r.StartEndDate);
                         ws.Cell(currentRow, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 16).SetValue(r.ProfileNature);
                 }
             }
             else
@@ -3292,6 +3325,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
                         ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 15).SetValue(r.ProfileNature);
                     if (!string.IsNullOrEmpty(r.ProjStatus))  ws.Cell(currentRow, 13).SetValue(r.ProjStatus);
                     if (!string.IsNullOrEmpty(r.JobType))     ws.Cell(currentRow, 14).SetValue(r.JobType);
                     if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 15).SetValue(r.ProfileNature);
@@ -3314,6 +3348,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ws.Cell(currentRow, 12).SetValue(r.StartEndDate);
                         ws.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                     }
+                    if (!string.IsNullOrEmpty(r.ProfileNature)) ws.Cell(currentRow, 15).SetValue(r.ProfileNature);
                 }
             }
 

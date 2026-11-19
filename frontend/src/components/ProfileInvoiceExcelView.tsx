@@ -2012,7 +2012,26 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           ...getCellHighlight('A')
                         }}
                       >
-                        {row.profileOwner || ''}
+                        {row.profileOwner ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
+                            <span>{row.profileOwner}</span>
+                            {row.profileNature ? (
+                              <span style={{
+                                fontSize: '0.67rem',
+                                fontWeight: 700,
+                                color: row.profileNature.toLowerCase() === 'executive' ? '#047857' : row.profileNature.toLowerCase() === 'real' ? '#2563eb' : 'var(--text-muted)',
+                                marginTop: '2px',
+                                textTransform: 'capitalize',
+                                letterSpacing: '0.02em',
+                                background: row.profileNature.toLowerCase() === 'executive' ? 'rgba(16, 185, 129, 0.12)' : row.profileNature.toLowerCase() === 'real' ? 'rgba(37, 99, 235, 0.10)' : 'transparent',
+                                padding: '1px 5px',
+                                borderRadius: '3px'
+                              }}>
+                                {row.profileNature}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : ''}
                       </td>
 
                       {/* B: Project Code */}
@@ -2387,10 +2406,25 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                           fontSize: isHeader ? '16px' : 'var(--excel-cell-font-size, 15px)',
                           color: isDiscuss ? 'var(--text-discuss-row)' : isHeader ? 'var(--text-main)' : 'inherit',
                           border: '1px solid var(--border-subtle)',
+                          verticalAlign: 'middle',
                           ...getCellHighlight('P')
                         }}
                       >
-                        {row.profileNature || ''}
+                        {row.profileNature ? (
+                          <span style={{
+                            fontSize: isHeader ? '13px' : '11px',
+                            fontWeight: 800,
+                            padding: isHeader ? '0.15rem 0.55rem' : '0.1rem 0.35rem',
+                            borderRadius: '4px',
+                            background: row.profileNature.toLowerCase() === 'executive' ? '#047857' : row.profileNature.toLowerCase() === 'real' ? '#2563eb' : 'transparent',
+                            color: (row.profileNature.toLowerCase() === 'executive' || row.profileNature.toLowerCase() === 'real') ? '#ffffff' : 'inherit',
+                            display: 'inline-block',
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {row.profileNature}
+                          </span>
+                        ) : ''}
                       </td>
                     </tr>
                   );
