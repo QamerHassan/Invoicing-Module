@@ -313,6 +313,7 @@ export interface ProfileInvoiceExcelViewRowDto {
   isForeign?: boolean;
   jobType?: string | null;
   profileNature?: string | null;
+  ownerNature?: string | null;
   handledFrom?: string | null;
   chargedAmtPkr?: number | null;
   exchangeRate?: number | null;

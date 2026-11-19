@@ -215,6 +215,7 @@ public class ProfileInvoiceExcelViewRowDto
     public bool IsForeign { get; set; }
     public string? JobType { get; set; }
     public string? ProfileNature { get; set; }
+    public string? OwnerNature { get; set; }
     public string? HandledFrom { get; set; }
     public string RowType { get; set; } = "Detail"; // "ProjectHeader", "Detail", "Standalone", "Blank"
 

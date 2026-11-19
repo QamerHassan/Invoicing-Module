@@ -2015,19 +2015,19 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
                         {row.profileOwner ? (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
                             <span>{row.profileOwner}</span>
-                            {row.profileNature ? (
+                            {row.ownerNature ? (
                               <span style={{
                                 fontSize: '0.67rem',
                                 fontWeight: 700,
-                                color: row.profileNature.toLowerCase() === 'executive' ? '#047857' : row.profileNature.toLowerCase() === 'real' ? '#2563eb' : 'var(--text-muted)',
+                                color: row.ownerNature.toLowerCase() === 'executive' ? '#047857' : row.ownerNature.toLowerCase() === 'real' ? '#2563eb' : 'var(--text-muted)',
                                 marginTop: '2px',
                                 textTransform: 'capitalize',
                                 letterSpacing: '0.02em',
-                                background: row.profileNature.toLowerCase() === 'executive' ? 'rgba(16, 185, 129, 0.12)' : row.profileNature.toLowerCase() === 'real' ? 'rgba(37, 99, 235, 0.10)' : 'transparent',
+                                background: row.ownerNature.toLowerCase() === 'executive' ? 'rgba(16, 185, 129, 0.12)' : row.ownerNature.toLowerCase() === 'real' ? 'rgba(37, 99, 235, 0.10)' : 'transparent',
                                 padding: '1px 5px',
                                 borderRadius: '3px'
                               }}>
-                                {row.profileNature}
+                                {row.ownerNature}
                               </span>
                             ) : null}
                           </div>

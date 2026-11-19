@@ -2516,29 +2516,22 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     startEndDate = $" / {curCloseDate.Value:dd-MMM-yy}";
             }
 
-            // Profile Nature
-            // PowerBuilder logic (CHOOSE CASE Upper(Trim(ls_profile_type))):
-            // CASE "E": ls_nature = "Executive"
-            // CASE "C": ls_nature = "Real"
-            // CASE ELSE: ls_nature = ""
-            string rawType = "";
-            if (curProj > 0 && !string.IsNullOrWhiteSpace(curProfileType))
+            // 1. Profile Owner Nature (Name ke neeche jo show hota hai)
+            // Strictly from: SELECT Profile_type FROM prof.Profile_Owners WHERE PrfOwn_code = :curOwn
+            string ownerRawType = ownerProfileTypes.TryGetValue(curOwn, out var opt) ? opt.Trim().ToUpperInvariant() : "";
+            string ownerNature = ownerRawType switch
             {
-                rawType = curProfileType.Trim().ToUpperInvariant();
-            }
-            if (string.IsNullOrWhiteSpace(rawType) && ownerProfileTypes.TryGetValue(curOwn, out var opt))
-            {
-                rawType = opt.Trim().ToUpperInvariant();
-            }
-            if (rawType != "E" && rawType != "C" && ownerProfileTypes.TryGetValue(curOwn, out var fallbackOpt))
-            {
-                if (fallbackOpt == "E" || fallbackOpt == "C")
-                {
-                    rawType = fallbackOpt;
-                }
-            }
+                "E" => "Executive",
+                "C" => "Real",
+                _ => ""
+            };
 
-            string profileNature = rawType switch
+            // 2. Project Nature (Last column: Nature (P))
+            // Strictly from: mkt.Projects.profile_type for the project (curProj > 0)
+            string projRawType = (curProj > 0 && !string.IsNullOrWhiteSpace(curProfileType))
+                ? curProfileType.Trim().ToUpperInvariant()
+                : "";
+            string profileNature = projRawType switch
             {
                 "E" => "Executive",
                 "C" => "Real",
@@ -2647,6 +2640,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                     IsForeign = (curBranchCode == ForeignBranchCode),
                     JobType = curJobType,
                     ProfileNature = profileNature,
+                    OwnerNature = ownerNature,
                     HandledFrom = handledFrom,
                     ToBeDiscussed = block.Rows.Any(r => r.ToBeDiscussed),
                     IsToBeDiscussed = block.Rows.Any(r => r.ToBeDiscussed),
@@ -2889,6 +2883,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                         ShareAmount = (isOther && dRow.IsIncluded) ? dRow.ShareAmount : null,
                         StartEndDate = startEndDate,
                         ProfileNature = profileNature,
+                        OwnerNature = ownerNature,
                         ToBeDiscussed = dRow.ToBeDiscussed,
                         IsToBeDiscussed = dRow.ToBeDiscussed,
                         IsProcessed = dRow.IsProcessed,
