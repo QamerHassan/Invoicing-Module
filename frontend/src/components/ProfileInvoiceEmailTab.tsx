@@ -183,16 +183,12 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   const [downloadingExcel, setDownloadingExcel] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
   const [withTotalCost, setWithTotalCost] = useState<boolean>(false);
+  const [withTotalInvoice, setWithTotalInvoice] = useState<boolean>(true);
 
   const [toEmails, setToEmails] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState<string>('');
 
-  const [showCc, setShowCc] = useState<boolean>(false);
-  const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState<string>('');
-
-  const [showBcc, setShowBcc] = useState<boolean>(false);
-  const [bccEmails, setBccEmails] = useState<string[]>([]);
   const [bccInput, setBccInput] = useState<string>('');
 
   const toEmail = useMemo(() => {
@@ -207,26 +203,12 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [toEmails, recipientInput]);
 
   const ccEmail = useMemo(() => {
-    const list = [...ccEmails];
-    if (ccInput.trim()) {
-      const extra = parseEmailList(ccInput);
-      for (const e of extra) {
-        if (!list.includes(e)) list.push(e);
-      }
-    }
-    return list.join(', ');
-  }, [ccEmails, ccInput]);
+    return parseEmailList(ccInput).join(', ');
+  }, [ccInput]);
 
   const bccEmail = useMemo(() => {
-    const list = [...bccEmails];
-    if (bccInput.trim()) {
-      const extra = parseEmailList(bccInput);
-      for (const e of extra) {
-        if (!list.includes(e)) list.push(e);
-      }
-    }
-    return list.join(', ');
-  }, [bccEmails, bccInput]);
+    return parseEmailList(bccInput).join(', ');
+  }, [bccInput]);
 
   const [replyToEmail, setReplyToEmail] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
@@ -313,45 +295,25 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     const cachedEmail = localStorage.getItem(`profile_invoice_email_recipient_${ownerCode}`) || '';
     setToEmails(parseEmailList(cachedEmail));
     setRecipientInput('');
-    setCcEmails([]);
     setCcInput('');
-    setShowCc(false);
-    setBccEmails([]);
     setBccInput('');
-    setShowBcc(false);
+
+    const isAlreadyEmailed = Boolean(emailedOwners[String(ownerCode)]);
+    setWithTotalInvoice(!isAlreadyEmailed);
+    setWithTotalCost(false);
 
     const monthFormatted = formatMonthDisplay(cleanMonth);
-    const isCurrentExcelOwner = !ownerCode || ownerCode === initialOwnerCode;
-    const invoiceTotal = (isCurrentExcelOwner && excelTotalInvoice !== undefined)
-      ? excelTotalInvoice
-      : (activeOwnerProfile?.totalInvoice != null
-          ? activeOwnerProfile.totalInvoice
-          : (excelTotalInvoice !== undefined ? excelTotalInvoice : 0));
-    const costTotal = activeOwnerProfile?.totalCost != null
-      ? activeOwnerProfile.totalCost
-      : displayRows.reduce((acc, r: any) => acc + (r.totalCost ?? 0), 0);
-
     setSubject(`Profile Invoice – ${activeOwnerName} – ${monthFormatted}`);
-
-    const summaryLines = withTotalCost
-      ? `Summary:\n` +
-        `• Total Cost: $${Math.round(costTotal).toLocaleString()}\n` +
-        `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
-        `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n`
-      : `Summary:\n` +
-        `• Total Invoice Amount: $${Math.round(invoiceTotal).toLocaleString()}\n` +
-        `• Processed Invoices: ${activeOwnerProfile ? activeOwnerProfile.rowsCount : displayRows.length}\n\n`;
 
     setBody(
       `Dear ${activeOwnerName},\n\n` +
       `Please find attached your ${isSelectedMode ? 'selected' : 'processed'} profile invoice for ${monthFormatted}.\n\n` +
-      summaryLines +
       `Please review the attached Excel workbook for complete line-item breakdown.\n\n` +
       `Regards,\n` +
       `Rizviz Invoicing Team`
     );
     setFieldErrors({});
-  }, [ownerCode, cleanMonth, activeOwnerName, displayRows, isSelectedMode, viewMode, activeOwnerProfile, withTotalCost, excelTotalInvoice, initialOwnerCode]);
+  }, [ownerCode, cleanMonth, activeOwnerName, isSelectedMode, viewMode, emailedOwners]);
 
   const ownerTotals = useMemo(() => {
     // Total Invoice from Excel Sheet View as single source of truth
@@ -975,9 +937,32 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             <span>Month: <strong>{cleanMonth}</strong></span>
             <span style={{ color: 'var(--text-subtle)' }}>•</span>
             <span>Processed: <strong>{ownerTotals.count}</strong> invoices</span>
-            <span style={{ color: 'var(--text-subtle)' }}>•</span>
-            <span style={{ color: 'var(--excel-actual-color)', fontWeight: 800 }}>${Math.round(ownerTotals.usd).toLocaleString()}</span>
+            {withTotalInvoice && (
+              <>
+                <span style={{ color: 'var(--text-subtle)' }}>•</span>
+                <span style={{ color: 'var(--excel-actual-color)', fontWeight: 800 }}>${Math.round(ownerTotals.usd).toLocaleString()}</span>
+              </>
+            )}
           </div>
+
+          {/* Already Emailed Badge */}
+          {Boolean(emailedOwners[String(ownerCode)]) && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '2px 10px',
+              borderRadius: '12px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1.5px solid #10b981',
+              color: '#059669',
+              fontSize: '0.74rem',
+              fontWeight: 800
+            }}>
+              <CheckCircle2 size={13} color="#10b981" />
+              <span>Already Emailed{emailedOwners[String(ownerCode)]?.toEmail ? ` to ${emailedOwners[String(ownerCode)].toEmail}` : ''}{emailedOwners[String(ownerCode)]?.emailedAt ? ` (${new Date(emailedOwners[String(ownerCode)].emailedAt).toLocaleDateString()})` : ''}</span>
+            </div>
+          )}
 
           {unprocessedWarning.count > 0 && (
             <button
@@ -1076,6 +1061,25 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
         </div>
       )}
 
+      {/* Already Emailed Info Banner */}
+      {Boolean(emailedOwners[String(ownerCode)]) && (
+        <div style={{
+          padding: '0.35rem 0.75rem',
+          background: 'rgba(16, 185, 129, 0.1)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+          borderRadius: 'var(--radius-sm)',
+          color: '#059669',
+          fontSize: '0.74rem',
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.45rem'
+        }}>
+          <CheckCircle2 size={14} color="#10b981" />
+          <span>Already Emailed: This invoice was previously sent{emailedOwners[String(ownerCode)]?.toEmail ? ` to ${emailedOwners[String(ownerCode)].toEmail}` : ''}{emailedOwners[String(ownerCode)]?.emailedAt ? ` on ${new Date(emailedOwners[String(ownerCode)].emailedAt).toLocaleDateString()}` : ''}. You are viewing re-send mode.</span>
+        </div>
+      )}
+
       {/* ─── Main 2-Panel Content Layout ─── */}
       <div className="email-compose-grid">
 
@@ -1110,7 +1114,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
               </span>
             </div>
 
-            {/* Quick Preview Button & With Total Cost Checkbox */}
+            {/* Checkboxes: With Total Cost & With Total Invoice */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <label style={{
                 display: 'inline-flex',
@@ -1126,7 +1130,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                 padding: '2px 6px',
                 userSelect: 'none'
               }}
-              title="Tick to show both Total Cost and Total Invoice in email and Excel attachment"
+              title="Tick to show Total Cost"
               >
                 <input
                   type="checkbox"
@@ -1137,29 +1141,30 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                 <span>With Total Cost</span>
               </label>
 
-              {displayRows.length > 0 && (
-                <button
-                  onClick={handleReviewAttachment}
-                  disabled={downloadingExcel}
-                  title="Download Excel containing this owner's processed invoices"
-                  style={{
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
-                    color: '#10b981',
-                    borderRadius: '3px',
-                    padding: '1px 7px',
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    cursor: downloadingExcel ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px'
-                  }}
-                >
-                  <Download size={10} className={downloadingExcel ? 'spin' : ''} />
-                  <span>Review Excel</span>
-                </button>
-              )}
+              <label style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: withTotalInvoice ? '#2563eb' : 'var(--text-muted)',
+                background: withTotalInvoice ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                border: withTotalInvoice ? '1px solid rgba(37, 99, 235, 0.3)' : '1px solid transparent',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                userSelect: 'none'
+              }}
+              title="Tick to show Total Invoice"
+              >
+                <input
+                  type="checkbox"
+                  checked={withTotalInvoice}
+                  onChange={e => setWithTotalInvoice(e.target.checked)}
+                  style={{ cursor: 'pointer', accentColor: '#2563eb' }}
+                />
+                <span>With Total Invoice</span>
+              </label>
             </div>
           </div>
 
@@ -1215,7 +1220,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                     {withTotalCost && (
                       <th style={{ width: '100px', textAlign: 'right', color: 'var(--excel-cost-color, #f59e0b)' }}>Total Cost</th>
                     )}
-                    <th style={{ width: withTotalCost ? '105px' : '130px', textAlign: 'right' }}>Total Invoice</th>
+                    {withTotalInvoice && (
+                      <th style={{ width: withTotalCost ? '105px' : '130px', textAlign: 'right' }}>Total Invoice</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1227,9 +1234,11 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                         {fmtUsd(ownerTotals.cost)}
                       </td>
                     )}
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.90rem', color: 'var(--excel-actual-color)', whiteSpace: 'nowrap' }}>
-                      ${Math.round(ownerTotals.usd).toLocaleString()}
-                    </td>
+                    {withTotalInvoice && (
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.90rem', color: 'var(--excel-actual-color)', whiteSpace: 'nowrap' }}>
+                        ${Math.round(ownerTotals.usd).toLocaleString()}
+                      </td>
+                    )}
                   </tr>
                 </tbody>
               </table>
@@ -1336,48 +1345,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
                       Clear all
                     </button>
                   </>
-                )}
-                {(!showCc || !showBcc) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '2px' }}>
-                    {!showCc && (
-                      <button
-                        type="button"
-                        onClick={() => setShowCc(true)}
-                        style={{
-                          background: 'rgba(99, 102, 241, 0.08)',
-                          border: '1px solid rgba(99, 102, 241, 0.25)',
-                          color: 'var(--accent-primary)',
-                          fontSize: '0.70rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          padding: '1px 6px',
-                          borderRadius: '4px'
-                        }}
-                        title="Add Cc recipients"
-                      >
-                        Cc
-                      </button>
-                    )}
-                    {!showBcc && (
-                      <button
-                        type="button"
-                        onClick={() => setShowBcc(true)}
-                        style={{
-                          background: 'rgba(99, 102, 241, 0.08)',
-                          border: '1px solid rgba(99, 102, 241, 0.25)',
-                          color: 'var(--accent-primary)',
-                          fontSize: '0.70rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          padding: '1px 6px',
-                          borderRadius: '4px'
-                        }}
-                        title="Add Bcc recipients"
-                      >
-                        Bcc
-                      </button>
-                    )}
-                  </div>
                 )}
               </div>
             </div>
@@ -1510,376 +1477,6 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             </span>
           </div>
 
-          {/* CC Field (Gmail style) */}
-          {showCc && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                  Cc (Carbon Copy)
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {ccEmails.length > 0 && (
-                    <>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-primary)', background: 'rgba(99, 102, 241, 0.1)', padding: '1px 6px', borderRadius: '10px' }}>
-                        {ccEmails.length} CC{ccEmails.length !== 1 ? 's' : ''}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCcEmails([]);
-                          setCcInput('');
-                          setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-subtle)',
-                          fontSize: '0.66rem',
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                      >
-                        Clear
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCcEmails([]);
-                      setCcInput('');
-                      setShowCc(false);
-                      setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      fontSize: '0.68rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '2px'
-                    }}
-                    title="Remove CC field"
-                  >
-                    <X size={11} />
-                    <span>Hide CC</span>
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 8px',
-                  background: 'var(--bg-surface)',
-                  border: fieldErrors.ccEmail ? '1.5px solid #ef4444' : '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  minHeight: '34px',
-                  boxSizing: 'border-box',
-                  cursor: 'text'
-                }}
-                onClick={(e) => {
-                  const target = e.currentTarget.querySelector('input');
-                  if (target) target.focus();
-                }}
-              >
-                {ccEmails.map((email, idx) => {
-                  const isValid = validateEmail(email);
-                  return (
-                    <span
-                      key={`${email}-${idx}`}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        background: isValid ? 'rgba(99, 102, 241, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                        color: isValid ? 'var(--text-main)' : '#dc2626',
-                        border: `1px solid ${isValid ? 'rgba(99, 102, 241, 0.3)' : 'rgba(239, 68, 68, 0.4)'}`,
-                        padding: '1px 7px',
-                        borderRadius: '16px',
-                        fontSize: '0.72rem',
-                        fontWeight: 600,
-                        maxWidth: '100%',
-                        wordBreak: 'break-all'
-                      }}
-                    >
-                      <Mail size={10} color={isValid ? '#6366f1' : '#dc2626'} style={{ flexShrink: 0 }} />
-                      <span>{email}</span>
-                      <button
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setCcEmails(prev => prev.filter((_, i) => i !== idx));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: 0,
-                          color: 'var(--text-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          marginLeft: '2px'
-                        }}
-                        title="Remove CC"
-                      >
-                        <X size={11} />
-                      </button>
-                    </span>
-                  );
-                })}
-
-                <input
-                  type="text"
-                  value={ccInput}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val.includes(',') || val.includes(';') || val.includes('\n')) {
-                      const added = parseEmailList(val);
-                      setCcEmails(prev => Array.from(new Set([...prev, ...added])));
-                      setCcInput('');
-                    } else {
-                      setCcInput(val);
-                    }
-                    setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === 'Tab') {
-                      if (ccInput.trim()) {
-                        e.preventDefault();
-                        const added = parseEmailList(ccInput);
-                        setCcEmails(prev => Array.from(new Set([...prev, ...added])));
-                        setCcInput('');
-                        setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
-                      }
-                    } else if (e.key === 'Backspace' && !ccInput && ccEmails.length > 0) {
-                      setCcEmails(prev => prev.slice(0, -1));
-                    }
-                  }}
-                  onPaste={e => {
-                    const pasted = e.clipboardData.getData('text');
-                    if (pasted.includes(',') || pasted.includes(';') || pasted.includes('\n') || pasted.includes(' ')) {
-                      e.preventDefault();
-                      const added = parseEmailList(pasted);
-                      if (added.length > 0) {
-                        setCcEmails(prev => Array.from(new Set([...prev, ...added])));
-                        setCcInput('');
-                        setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
-                      }
-                    }
-                  }}
-                  placeholder={ccEmails.length === 0 ? "Enter CC emails (press Enter or comma to add)..." : "Add more CC..."}
-                  style={{
-                    flex: 1,
-                    minWidth: '160px',
-                    border: 'none',
-                    outline: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-main)',
-                    fontSize: '0.78rem',
-                    padding: '2px 0'
-                  }}
-                />
-              </div>
-
-              {fieldErrors.ccEmail && (
-                <span style={{ fontSize: '0.68rem', color: '#ef4444', display: 'block', marginTop: '2px' }}>
-                  {fieldErrors.ccEmail}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* BCC Field (Gmail style) */}
-          {showBcc && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                  Bcc (Blind Carbon Copy)
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {bccEmails.length > 0 && (
-                    <>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-primary)', background: 'rgba(99, 102, 241, 0.1)', padding: '1px 6px', borderRadius: '10px' }}>
-                        {bccEmails.length} BCC{bccEmails.length !== 1 ? 's' : ''}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBccEmails([]);
-                          setBccInput('');
-                          setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-subtle)',
-                          fontSize: '0.66rem',
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                      >
-                        Clear
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBccEmails([]);
-                      setBccInput('');
-                      setShowBcc(false);
-                      setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      fontSize: '0.68rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '2px'
-                    }}
-                    title="Remove BCC field"
-                  >
-                    <X size={11} />
-                    <span>Hide BCC</span>
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 8px',
-                  background: 'var(--bg-surface)',
-                  border: fieldErrors.bccEmail ? '1.5px solid #ef4444' : '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  minHeight: '34px',
-                  boxSizing: 'border-box',
-                  cursor: 'text'
-                }}
-                onClick={(e) => {
-                  const target = e.currentTarget.querySelector('input');
-                  if (target) target.focus();
-                }}
-              >
-                {bccEmails.map((email, idx) => {
-                  const isValid = validateEmail(email);
-                  return (
-                    <span
-                      key={`${email}-${idx}`}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        background: isValid ? 'rgba(99, 102, 241, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                        color: isValid ? 'var(--text-main)' : '#dc2626',
-                        border: `1px solid ${isValid ? 'rgba(99, 102, 241, 0.3)' : 'rgba(239, 68, 68, 0.4)'}`,
-                        padding: '1px 7px',
-                        borderRadius: '16px',
-                        fontSize: '0.72rem',
-                        fontWeight: 600,
-                        maxWidth: '100%',
-                        wordBreak: 'break-all'
-                      }}
-                    >
-                      <Mail size={10} color={isValid ? '#6366f1' : '#dc2626'} style={{ flexShrink: 0 }} />
-                      <span>{email}</span>
-                      <button
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setBccEmails(prev => prev.filter((_, i) => i !== idx));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: 0,
-                          color: 'var(--text-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          marginLeft: '2px'
-                        }}
-                        title="Remove BCC"
-                      >
-                        <X size={11} />
-                      </button>
-                    </span>
-                  );
-                })}
-
-                <input
-                  type="text"
-                  value={bccInput}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val.includes(',') || val.includes(';') || val.includes('\n')) {
-                      const added = parseEmailList(val);
-                      setBccEmails(prev => Array.from(new Set([...prev, ...added])));
-                      setBccInput('');
-                    } else {
-                      setBccInput(val);
-                    }
-                    setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === 'Tab') {
-                      if (bccInput.trim()) {
-                        e.preventDefault();
-                        const added = parseEmailList(bccInput);
-                        setBccEmails(prev => Array.from(new Set([...prev, ...added])));
-                        setBccInput('');
-                        setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
-                      }
-                    } else if (e.key === 'Backspace' && !bccInput && bccEmails.length > 0) {
-                      setBccEmails(prev => prev.slice(0, -1));
-                    }
-                  }}
-                  onPaste={e => {
-                    const pasted = e.clipboardData.getData('text');
-                    if (pasted.includes(',') || pasted.includes(';') || pasted.includes('\n') || pasted.includes(' ')) {
-                      e.preventDefault();
-                      const added = parseEmailList(pasted);
-                      if (added.length > 0) {
-                        setBccEmails(prev => Array.from(new Set([...prev, ...added])));
-                        setBccInput('');
-                        setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
-                      }
-                    }
-                  }}
-                  placeholder={bccEmails.length === 0 ? "Enter BCC emails (press Enter or comma to add)..." : "Add more BCC..."}
-                  style={{
-                    flex: 1,
-                    minWidth: '160px',
-                    border: 'none',
-                    outline: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-main)',
-                    fontSize: '0.78rem',
-                    padding: '2px 0'
-                  }}
-                />
-              </div>
-
-              {fieldErrors.bccEmail && (
-                <span style={{ fontSize: '0.68rem', color: '#ef4444', display: 'block', marginTop: '2px' }}>
-                  {fieldErrors.bccEmail}
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Reply-To */}
           <div>
             <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
@@ -1897,6 +1494,46 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             />
             {fieldErrors.replyToEmail && (
               <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.replyToEmail}</span>
+            )}
+          </div>
+
+          {/* Cc (Optional) */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+              Cc (Optional)
+            </label>
+            <input
+              type="text"
+              value={ccInput}
+              onChange={e => {
+                setCcInput(e.target.value);
+                setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
+              }}
+              placeholder="e.g. manager@rizviz.com, finance@rizviz.com"
+              style={inputStyle(!!fieldErrors.ccEmail)}
+            />
+            {fieldErrors.ccEmail && (
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.ccEmail}</span>
+            )}
+          </div>
+
+          {/* Bcc (Optional) */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+              Bcc (Optional)
+            </label>
+            <input
+              type="text"
+              value={bccInput}
+              onChange={e => {
+                setBccInput(e.target.value);
+                setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
+              }}
+              placeholder="e.g. archive@rizviz.com"
+              style={inputStyle(!!fieldErrors.bccEmail)}
+            />
+            {fieldErrors.bccEmail && (
+              <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.bccEmail}</span>
             )}
           </div>
 

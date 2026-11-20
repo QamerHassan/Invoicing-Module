@@ -392,7 +392,10 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Profile_Invoice_${selectedOwnerCode}_${cleanMonth}.xlsx`;
+      const selectedOwner = (groupOwnersList || _groupOwners || []).find(o => o.prfOwnCode === selectedOwnerCode);
+      const ownerNameStr = selectedOwner?.profileName || data?.groupOwnerName || lockedOwnerName || `Owner_${selectedOwnerCode}`;
+      const cleanOwnerName = String(ownerNameStr).replace(/[\s/\\()]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+      a.download = `Profile_Invoice_${cleanOwnerName}_${cleanMonth}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
