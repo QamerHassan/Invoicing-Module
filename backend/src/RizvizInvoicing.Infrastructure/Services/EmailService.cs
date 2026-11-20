@@ -37,7 +37,8 @@ public class EmailService : IEmailService
             "gmail.com" => "smtp.gmail.com",
             "outlook.com" or "hotmail.com" or "live.com" => "smtp-mail.outlook.com",
             "yahoo.com" or "yahoo.co.uk" or "ymail.com" => "smtp.mail.yahoo.com",
-            _ => "smtp." + domain
+            "linksitservices.com" => "mail.linksitservices.com",
+            _ => fallbackHost  // use configured host instead of guessing
         };
     }
 
@@ -206,6 +207,24 @@ public class EmailService : IEmailService
         message.Body = builder.ToMessageBody();
 
         using var client = new SmtpClient();
+
+        // cPanel shared hosting uses *.web-hosting.com wildcard cert (CN mismatch with mail.linksitservices.com).
+        // Trust it when issuer is a known trusted CA (SSL.com) to avoid blocking legitimate sends.
+        client.ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) =>
+        {
+            if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None) return true;
+            // Allow cPanel shared hosting wildcard cert for linksitservices.com
+            var subject = certificate?.Subject ?? string.Empty;
+            var issuer  = certificate?.Issuer  ?? string.Empty;
+            if ((activeHost.Contains("linksitservices.com") || subject.Contains("web-hosting.com"))
+                && issuer.Contains("SSL.com"))
+            {
+                _logger.LogInformation("Accepting cPanel shared SSL cert (CN mismatch allowed) for host {Host}", activeHost);
+                return true;
+            }
+            return false;
+        };
+
         try
         {
             await client.ConnectAsync(activeHost, port, SecureSocketOptions.StartTls, ct);

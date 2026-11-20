@@ -283,11 +283,22 @@ public class ProfileInvoicesController : ControllerBase
                 effectiveCode, month, processedOnly, excludeToBeDiscussed: false, specificOwnerCode: effectiveCode, withTotalCost: withTotalCost, ct: ct);
         }
 
+        string ownerNameClean = effectiveCode.ToString();
+        try
+        {
+            var excelView = await _profileInvoicingService.GetExcelViewAsync(effectiveCode, month, ct: ct);
+            if (!string.IsNullOrWhiteSpace(excelView?.GroupOwnerName))
+            {
+                ownerNameClean = System.Text.RegularExpressions.Regex.Replace(excelView.GroupOwnerName, @"[\s/\\():*?""<>|]+", "_").Trim('_');
+            }
+        }
+        catch { /* fallback to effectiveCode */ }
+
         string filename = processedOnly
-            ? $"Processed_Invoice_{effectiveCode}_{month}.xlsx"
+            ? $"Processed_Invoice_{ownerNameClean}_{month}.xlsx"
             : excludeToBeDiscussed
-            ? $"Selected_Invoice_{effectiveCode}_{month}.xlsx"
-            : $"Profile_Invoice_{effectiveCode}_{month}.xlsx";
+            ? $"Selected_Invoice_{ownerNameClean}_{month}.xlsx"
+            : $"Profile_Invoice_{ownerNameClean}_{month}.xlsx";
 
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename);
     }
@@ -340,9 +351,20 @@ public class ProfileInvoicesController : ControllerBase
                 withTotalCost: request.WithTotalCost,
                 ct: ct);
 
+            string ownerNameClean = request.GroupOwnerCode.ToString();
+            try
+            {
+                var excelView = await _profileInvoicingService.GetExcelViewAsync(request.GroupOwnerCode, request.Month, ct: ct);
+                if (!string.IsNullOrWhiteSpace(excelView?.GroupOwnerName))
+                {
+                    ownerNameClean = System.Text.RegularExpressions.Regex.Replace(excelView.GroupOwnerName, @"[\s/\\():*?""<>|]+", "_").Trim('_');
+                }
+            }
+            catch { /* fallback */ }
+
             string filename = isProcessed
-                ? $"Processed_Invoice_{request.GroupOwnerCode}_{request.Month}.xlsx"
-                : $"Profile_Invoice_{request.GroupOwnerCode}_{request.Month}.xlsx";
+                ? $"Processed_Invoice_{ownerNameClean}_{request.Month}.xlsx"
+                : $"Profile_Invoice_{ownerNameClean}_{request.Month}.xlsx";
 
             // ── Credential resolution: Request > Saved > Default config ──
             string? activeSender = null;
