@@ -113,14 +113,23 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   }, [load]);
 
   const filteredProfiles = useMemo(() => {
-    if (!search.trim()) return profiles;
-    const q = search.trim().toLowerCase();
-    const words = q.split(/\s+/).filter(Boolean);
-    return profiles.filter(p => {
-      const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
-      return words.every(w => text.includes(w));
+    let result = profiles;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      result = profiles.filter(p => {
+        const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
+        return words.every(w => text.includes(w));
+      });
+    }
+    // Sort: not-emailed owners at TOP, emailed owners at BOTTOM
+    return [...result].sort((a, b) => {
+      const aEmailed = Boolean(emailedOwners[String(a.ownerCode)]);
+      const bEmailed = Boolean(emailedOwners[String(b.ownerCode)]);
+      if (aEmailed === bEmailed) return 0;
+      return aEmailed ? 1 : -1; // not-emailed (false) → top, emailed (true) → bottom
     });
-  }, [profiles, search]);
+  }, [profiles, search, emailedOwners]);
 
   const allFilteredCodes = useMemo(() => {
     return filteredProfiles.map(p => p.ownerCode);
