@@ -1383,6 +1383,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             groupOwners={postedOwners}
             initialOwnerCode={selectedOwnerCode}
             initialMonth={cleanMonth}
+            onViewInExcel={handleViewProcessedInExcel}
           />
         </div>
       )}
@@ -1403,6 +1404,7 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             groupOwners={postedOwners}
             initialOwnerCode=""
             initialMonth={cleanMonth}
+            onViewInExcel={handleViewProcessedInExcel}
           />
         </div>
       )}

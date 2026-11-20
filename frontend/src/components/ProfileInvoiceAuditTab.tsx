@@ -8,18 +8,21 @@ interface Props {
   groupOwners: ProfileGroupOwnerDto[];
   initialOwnerCode?: number | '';
   initialMonth?: string;
+  onViewInExcel?: (ownerCode: number, month: string) => void;
 }
 
 export const ProfileInvoiceAuditTab: React.FC<Props> = ({
   groupOwners,
   initialOwnerCode,
   initialMonth,
+  onViewInExcel,
 }) => {
   const [month, setMonth] = useState(initialMonth || '');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
   const [rows, setRows] = useState<ProfileInvoiceAuditLogDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!month) return;
@@ -191,10 +194,27 @@ export const ProfileInvoiceAuditTab: React.FC<Props> = ({
               </tr>
             ) : (
               rows.map(row => (
-                <tr key={row.id} className={`table-row-hover ${row.isForeign ? 'foreign-row' : ''}`.trim()}
-                  style={{ background: row.isForeign ? 'var(--bg-foreign-row)' : undefined }}
-                  onMouseEnter={e => { if (!row.isForeign) e.currentTarget.style.background = 'var(--bg-surface)'; }}
-                  onMouseLeave={e => { if (!row.isForeign) e.currentTarget.style.background = ''; }}
+                <tr
+                  key={row.id}
+                  className={`table-row-hover ${row.isForeign ? 'foreign-row' : ''}`.trim()}
+                  style={{
+                    background: focusedId === row.id
+                      ? 'rgba(37, 99, 235, 0.16)'
+                      : (row.isForeign ? 'var(--bg-foreign-row)' : undefined),
+                    outline: focusedId === row.id ? '2px solid #2563eb' : undefined,
+                    outlineOffset: '-2px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setFocusedId(row.id)}
+                  onDoubleClick={() => {
+                    setFocusedId(row.id);
+                    if (ownerCode && onViewInExcel) {
+                      onViewInExcel(Number(ownerCode), row.invoiceMonth || month);
+                    }
+                  }}
+                  title="Click to focus / double click to view in Excel View"
+                  onMouseEnter={e => { if (focusedId !== row.id && !row.isForeign) e.currentTarget.style.background = 'var(--bg-surface)'; }}
+                  onMouseLeave={e => { if (focusedId !== row.id && !row.isForeign) e.currentTarget.style.background = ''; }}
                 >
                   <td style={{
                     whiteSpace: 'nowrap',

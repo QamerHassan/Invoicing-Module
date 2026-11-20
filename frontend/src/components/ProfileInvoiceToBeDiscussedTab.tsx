@@ -16,12 +16,14 @@ interface Props {
   groupOwners: ProfileGroupOwnerDto[];
   initialOwnerCode?: number | '';
   initialMonth?: string;
+  onViewInExcel?: (ownerCode: number, month: string) => void;
 }
 
 export const ProfileInvoiceToBeDiscussedTab: React.FC<Props> = ({
   groupOwners,
   initialOwnerCode,
   initialMonth,
+  onViewInExcel,
 }) => {
   // ── Filter state ────────────────────────────────────────────────────────────
   const [month, setMonth] = useState(initialMonth || '');
@@ -466,11 +468,19 @@ export const ProfileInvoiceToBeDiscussedTab: React.FC<Props> = ({
                 return (
                   <tr
                     key={row.cmpProfInvoiceCode}
-                    className={row.isForeign ? 'foreign-row' : undefined}
+                    className={`table-row-hover ${row.isForeign ? 'foreign-row' : ''}`.trim()}
                     style={{
                       borderBottom: '1px solid var(--border-subtle)',
-                      background: rowBg
+                      background: rowBg,
+                      cursor: 'pointer'
                     }}
+                    onDoubleClick={() => {
+                      const targetCode = row.prfgrpOwnCode || row.prfownCode;
+                      if (targetCode && onViewInExcel) {
+                        onViewInExcel(targetCode, row.invoiceMonth || month);
+                      }
+                    }}
+                    title="Double click to open invoice in Excel Sheet View"
                     onMouseEnter={e => { if (!isChecked && !row.isForeign) e.currentTarget.style.background = 'var(--bg-surface)'; }}
                     onMouseLeave={e => { if (!isChecked && !row.isForeign) e.currentTarget.style.background = ''; }}
                   >

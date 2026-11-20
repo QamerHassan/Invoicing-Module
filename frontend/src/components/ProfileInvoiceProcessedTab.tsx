@@ -39,7 +39,6 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   });
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [selectedOwnerCodes, setSelectedOwnerCodes] = useState<Set<number>>(new Set());
 
@@ -113,23 +112,14 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   }, [load]);
 
   const filteredProfiles = useMemo(() => {
-    let result = profiles;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      const words = q.split(/\s+/).filter(Boolean);
-      result = profiles.filter(p => {
-        const text = `${p.ownerName || ''} ${p.ownerCode} ${p.month || ''}`.toLowerCase();
-        return words.every(w => text.includes(w));
-      });
-    }
     // Sort: not-emailed owners at TOP, emailed owners at BOTTOM
-    return [...result].sort((a, b) => {
+    return [...profiles].sort((a, b) => {
       const aEmailed = Boolean(emailedOwners[String(a.ownerCode)]);
       const bEmailed = Boolean(emailedOwners[String(b.ownerCode)]);
       if (aEmailed === bEmailed) return 0;
       return aEmailed ? 1 : -1; // not-emailed (false) → top, emailed (true) → bottom
     });
-  }, [profiles, search, emailedOwners]);
+  }, [profiles, emailedOwners]);
 
   const allFilteredCodes = useMemo(() => {
     return filteredProfiles.map(p => p.ownerCode);
@@ -367,47 +357,6 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
             <RotateCcw size={12} className={actionLoading ? 'spin' : ''} />
             {actionLoading ? 'Moving...' : `Undo to Unprocessed ${someSelected ? `(${selectedOwnerCodes.size})` : ''}`}
           </button>
-
-          {/* Search */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={11} style={{ position: 'absolute', left: '6px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search..."
-              style={{
-                background: 'var(--bg-surface)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '1px 22px 1px 20px',
-                fontSize: '0.72rem',
-                width: '130px',
-                height: '24px',
-                boxSizing: 'border-box'
-              }}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                style={{
-                  position: 'absolute',
-                  right: '4px',
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  color: 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <X size={11} />
-              </button>
-            )}
-          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -492,7 +441,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
               {filteredProfiles.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    {search ? `No processed profiles matching "${search}".` : 'No processed invoices found for this month.'}
+                    No processed invoices found for this month.
                   </td>
                 </tr>
               ) : (
@@ -509,6 +458,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                         cursor: 'pointer'
                       }}
                       onClick={() => handleToggleOwner(p.ownerCode)}
+                      onDoubleClick={() => onViewInExcel?.(p.ownerCode, p.month || month)}
+                      title="Double click to open invoice in Excel Sheet View"
                     >
                       <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                         <input
@@ -523,7 +474,7 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
                       </td>
 
                       {/* Profile Name cell: Send Email on left, Name in middle, View+Undo on right */}
-                      <td style={{ fontWeight: 600 }} onClick={e => e.stopPropagation()}>
+                      <td style={{ fontWeight: 600 }} onClick={e => e.stopPropagation()} onDoubleClick={() => onViewInExcel?.(p.ownerCode, p.month || month)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
                           {/* Send Email button on the LEFT */}
                           <button
