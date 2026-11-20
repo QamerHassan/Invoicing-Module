@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Archive, RefreshCw, AlertTriangle, Search, CheckCircle, RotateCcw, X, Eye, Mail, ArrowLeft } from 'lucide-react';
+import { Archive, RefreshCw, AlertTriangle, CheckCircle, RotateCcw, Eye, Mail, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileGroupOwnerDto, ProfileInvoiceProcessedProfileDto } from '../types';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
