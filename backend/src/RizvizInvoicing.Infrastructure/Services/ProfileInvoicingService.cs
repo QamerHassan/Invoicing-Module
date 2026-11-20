@@ -26,10 +26,101 @@ public class ProfileInvoicingService : IProfileInvoicingService
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, List<ProfileInvoiceProcessedProfileDto> Data)> _processedProfilesCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, bool IsFinalized)> _finalizedMonthsCache = new();
+
+    private static DateTime _lookupCacheExpiry = DateTime.MinValue;
+    private static Dictionary<int, string>? _cachedStacks;
+    private static Dictionary<int, string>? _cachedChargibility;
+    private static string? _cachedForeignBranchName;
+    private static Dictionary<int, (string Name, string ProfileType, int ParentCode, int ResolvedGrp, string ResolvedGrpName)>? _cachedOwners;
+    private static readonly SemaphoreSlim _lookupLock = new SemaphoreSlim(1, 1);
 
     public static void InvalidateProcessedProfilesCache()
     {
         _processedProfilesCache.Clear();
+        _finalizedMonthsCache.Clear();
+    }
+
+    private async Task EnsureProfileLookupsCachedAsync(DbConnection conn, CancellationToken ct)
+    {
+        if (_lookupCacheExpiry > DateTime.UtcNow && _cachedStacks != null && _cachedOwners != null)
+            return;
+
+        await _lookupLock.WaitAsync(ct);
+        try
+        {
+            if (_lookupCacheExpiry > DateTime.UtcNow && _cachedStacks != null && _cachedOwners != null)
+                return;
+
+            var stacks = new Dictionary<int, string>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT stack_code, stack_name FROM setups.Stacks";
+                using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                {
+                    if (!rdr.IsDBNull(0))
+                        stacks[rdr.GetInt32(0)] = rdr.IsDBNull(1) ? "" : rdr.GetString(1).Trim();
+                }
+            }
+            _cachedStacks = stacks;
+
+            var charg = new Dictionary<int, string>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT DISTINCT charg_type_code, resource_nature FROM setups.Chargibility WHERE charg_type_code IS NOT NULL AND resource_nature IS NOT NULL";
+                using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                {
+                    charg[rdr.GetInt32(0)] = rdr.GetString(1).Trim();
+                }
+            }
+            _cachedChargibility = charg;
+
+            string branchName = "Foreign Branch";
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT branch_name FROM dbo.Company_branches WHERE branch_code = 5";
+                var obj = await cmd.ExecuteScalarAsync(ct);
+                if (obj != null && obj != DBNull.Value)
+                    branchName = obj.ToString()?.Trim() ?? "Foreign Branch";
+            }
+            _cachedForeignBranchName = branchName;
+
+            var owners = new Dictionary<int, (string Name, string ProfileType, int ParentCode, int ResolvedGrp, string ResolvedGrpName)>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT po.PrfOwn_code, po.profile_name, ISNULL(po.Profile_type, '') AS profile_type,
+                           ISNULL(po.ParentProfile_code, 0) AS parent_code,
+                           ISNULL(parent.PrfOwn_code, 0)   AS resolved_grp,
+                           ISNULL(parent.profile_name, '')  AS resolved_grp_name
+                    FROM prof.Profile_Owners po
+                    LEFT JOIN prof.Profile_Owners parent ON parent.PrfOwn_code = po.ParentProfile_code";
+                using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                {
+                    int c = rdr.GetInt32(0);
+                    string name = rdr.IsDBNull(1) ? "" : rdr.GetString(1).Trim();
+                    string pType = rdr.IsDBNull(2) ? "" : rdr.GetString(2).Trim().ToUpperInvariant();
+                    int pCode = rdr.GetInt32(3);
+                    int resGrp = rdr.GetInt32(4);
+                    string resName = rdr.IsDBNull(5) ? "" : rdr.GetString(5).Trim();
+                    owners[c] = (name, pType, pCode, resGrp, resName);
+                }
+            }
+            _cachedOwners = owners;
+
+            _lookupCacheExpiry = DateTime.UtcNow.AddMinutes(30);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"EnsureProfileLookupsCachedAsync warning: {ex.Message}");
+        }
+        finally
+        {
+            _lookupLock.Release();
+        }
     }
 
     public async Task<ProfileInvoiceDryRunResult> CalculateDryRunAsync(
@@ -47,6 +138,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
         {
             await conn.OpenAsync(ct);
         }
+
+        await EnsureProfileLookupsCachedAsync(conn, ct);
 
         // 1. Resolve Profile Group Owner Name
         using (var cmd = conn.CreateCommand())
@@ -867,6 +960,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
             await conn.OpenAsync(ct);
         }
 
+        await EnsureProfileLookupsCachedAsync(conn, ct);
+
         // Lookups for friendly names
         var profileNames = new Dictionary<int, string>();
         var entityNames = new Dictionary<decimal, string>();
@@ -1075,17 +1170,26 @@ public class ProfileInvoicingService : IProfileInvoicingService
         string cleanMonth = (monthYear ?? string.Empty).Trim().Replace("-", "").ToUpperInvariant();
         if (string.IsNullOrEmpty(cleanMonth)) return false;
 
+        if (_finalizedMonthsCache.TryGetValue(cleanMonth, out var cached) && (DateTime.UtcNow - cached.CachedAt).TotalMinutes < 15)
+        {
+            return cached.IsFinalized;
+        }
+
         var conn = _db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open)
         {
             await conn.OpenAsync(ct);
         }
 
+        await EnsureProfileLookupsCachedAsync(conn, ct);
+
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.final_invoicing WHERE REPLACE(RTRIM(month_year), '-', '') = @m) THEN 1 ELSE 0 END";
         cmd.Parameters.Add(new SqlParameter("@m", cleanMonth));
         var res = await cmd.ExecuteScalarAsync(ct);
-        return Convert.ToInt32(res ?? 0) == 1;
+        bool isFinalized = Convert.ToInt32(res ?? 0) == 1;
+        _finalizedMonthsCache[cleanMonth] = (DateTime.UtcNow, isFinalized);
+        return isFinalized;
     }
 
     public async Task<ProfileInvoiceRowUpdateResponse> UpdateRizvizShareIncludedAsync(
@@ -1097,6 +1201,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
         {
             await conn.OpenAsync(ct);
         }
+
+        await EnsureProfileLookupsCachedAsync(conn, ct);
 
         string cleanMonth = (request.MonthYear ?? "").Trim().Replace("-", "").ToUpper();
         string scValue = (request.IsIncluded == true) ? "RS:1" : "RS:0";
@@ -1203,6 +1309,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
         {
             await conn.OpenAsync(ct);
         }
+
+        await EnsureProfileLookupsCachedAsync(conn, ct);
 
         // 1. Fetch current row state
         string invoiceMonth = "";
@@ -1611,6 +1719,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
             await conn.OpenAsync(ct);
         }
 
+        await EnsureProfileLookupsCachedAsync(conn, ct);
+
         string cleanMonth = (monthYear ?? "").Trim().Replace("-", "").ToUpperInvariant();
         bool isFinalized = await IsMonthFinalizedAsync(cleanMonth, ct);
 
@@ -1965,13 +2075,37 @@ public class ProfileInvoicingService : IProfileInvoicingService
             await conn.OpenAsync(ct);
         }
 
+        await EnsureProfileLookupsCachedAsync(conn, ct);
+
         // 1. Resolve Group Owner / Recipient Owner Code and Name
         int effectiveGroupCode = (specificOwnerCode.HasValue && specificOwnerCode.Value > 0)
             ? specificOwnerCode.Value
             : groupOwnerCode;
         string groupOwnerName = "";
 
-        if (processedOnly || (specificOwnerCode.HasValue && specificOwnerCode.Value > 0))
+        if (_cachedOwners != null && _cachedOwners.TryGetValue(groupOwnerCode, out var ownerInfo))
+        {
+            if (processedOnly || (specificOwnerCode.HasValue && specificOwnerCode.Value > 0))
+            {
+                groupOwnerName = _cachedOwners.TryGetValue(effectiveGroupCode, out var effOwner) && !string.IsNullOrWhiteSpace(effOwner.Name)
+                    ? effOwner.Name
+                    : $"Owner #{effectiveGroupCode}";
+            }
+            else
+            {
+                if (ownerInfo.ParentCode > 0 && ownerInfo.ParentCode != groupOwnerCode)
+                {
+                    effectiveGroupCode = ownerInfo.ResolvedGrp > 0 ? ownerInfo.ResolvedGrp : ownerInfo.ParentCode;
+                    groupOwnerName = string.IsNullOrWhiteSpace(ownerInfo.ResolvedGrpName) ? ownerInfo.Name : ownerInfo.ResolvedGrpName;
+                }
+                else
+                {
+                    effectiveGroupCode = groupOwnerCode;
+                    groupOwnerName = ownerInfo.Name;
+                }
+            }
+        }
+        else if (processedOnly || (specificOwnerCode.HasValue && specificOwnerCode.Value > 0))
         {
             // For processed / specific recipient, resolve their own profile name directly
             using var cmd = conn.CreateCommand();
@@ -2132,7 +2266,18 @@ public class ProfileInvoicingService : IProfileInvoicingService
         }
         var profileNames = new Dictionary<int, string>();
         var ownerProfileTypes = new Dictionary<int, string>();
-        if (ownerCodes.Count > 0)
+        if (_cachedOwners != null)
+        {
+            foreach (var oc in ownerCodes)
+            {
+                if (_cachedOwners.TryGetValue(oc, out var oData))
+                {
+                    profileNames[oc] = oData.Name;
+                    ownerProfileTypes[oc] = oData.ProfileType;
+                }
+            }
+        }
+        else if (ownerCodes.Count > 0)
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"SELECT PrfOwn_code, profile_name, ISNULL(Profile_type, '') FROM prof.Profile_Owners WHERE PrfOwn_code IN ({string.Join(",", ownerCodes)})";
@@ -2211,7 +2356,14 @@ public class ProfileInvoicingService : IProfileInvoicingService
         // Lookups for Stacks
         var stackCodes = projects.Values.Select(p => p.StackCode).Where(s => s > 0).Distinct().ToList();
         var stackNames = new Dictionary<int, string>();
-        if (stackCodes.Count > 0)
+        if (_cachedStacks != null)
+        {
+            foreach (var sc in stackCodes)
+            {
+                stackNames[sc] = _cachedStacks.TryGetValue(sc, out var sn) ? sn : "";
+            }
+        }
+        else if (stackCodes.Count > 0)
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"SELECT stack_code, stack_name FROM setups.Stacks WHERE stack_code IN ({string.Join(",", stackCodes)})";
@@ -2223,21 +2375,20 @@ public class ProfileInvoicingService : IProfileInvoicingService
         }
 
         // Lookups for Company Branches (ForeignBranchCode = 5)
-        string foreignBranchName = "Foreign Branch";
-        using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = "SELECT branch_name FROM dbo.Company_branches WHERE branch_code = 5";
-            var obj = await cmd.ExecuteScalarAsync(ct);
-            if (obj != null && obj != DBNull.Value)
-            {
-                foreignBranchName = obj.ToString()?.Trim() ?? "Foreign Branch";
-            }
-        }
+        string foreignBranchName = _cachedForeignBranchName ?? "Foreign Branch";
 
         // Lookups for Chargibility (resource_nature)
         var chargTypeCodes = savedRows.Where(r => r.ChargTypeCode.HasValue && r.ChargTypeCode.Value > 0).Select(r => r.ChargTypeCode!.Value).Distinct().ToList();
         var chargibilityNames = new Dictionary<int, string>();
-        if (chargTypeCodes.Count > 0)
+        if (_cachedChargibility != null)
+        {
+            foreach (var cc in chargTypeCodes)
+            {
+                if (_cachedChargibility.TryGetValue(cc, out var cn))
+                    chargibilityNames[cc] = cn;
+            }
+        }
+        else if (chargTypeCodes.Count > 0)
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"SELECT charg_type_code, resource_nature FROM setups.Chargibility WHERE charg_type_code IN ({string.Join(",", chargTypeCodes)})";
@@ -3563,30 +3714,59 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        var invoiceCountsByOwner = new Dictionary<int, (int Count, decimal TotalCost)>();
+        using (var cmdSums = conn.CreateCommand())
+        {
+            cmdSums.CommandText = @"
+                SELECT ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS grp_code,
+                       COUNT(*),
+                       ISNULL(SUM(ISNULL(pi.total_usd_cost, 0)), 0)
+                FROM dbo.Profile_invoicing pi
+                WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
+                  AND pi.is_processed = 1
+                GROUP BY ISNULL(pi.prfgrp_own_code, pi.prfown_code)";
+            cmdSums.Parameters.Add(Param("@m", cleanMonth));
+            using var sRdr = await cmdSums.ExecuteReaderAsync(ct);
+            while (await sRdr.ReadAsync(ct))
+            {
+                invoiceCountsByOwner[sRdr.GetInt32(0)] = (sRdr.GetInt32(1), sRdr.GetDecimal(2));
+            }
+        }
+
+        var fallbackCodesByOwner = new Dictionary<int, List<long>>();
+        using (var cmdCodes = conn.CreateCommand())
+        {
+            cmdCodes.CommandText = @"
+                SELECT ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS grp_code,
+                       pi.cmp_prof_invoice_code
+                FROM dbo.Profile_invoicing pi
+                WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
+                  AND pi.is_processed = 1";
+            cmdCodes.Parameters.Add(Param("@m", cleanMonth));
+            using var cRdr = await cmdCodes.ExecuteReaderAsync(ct);
+            while (await cRdr.ReadAsync(ct))
+            {
+                int grp = cRdr.GetInt32(0);
+                if (!fallbackCodesByOwner.TryGetValue(grp, out var cList))
+                {
+                    cList = new List<long>();
+                    fallbackCodesByOwner[grp] = cList;
+                }
+                cList.Add(cRdr.GetInt64(1));
+            }
+        }
+
         foreach (var oCode in ownerCodes)
         {
             // Use full view (processedOnly=false) so TotalInvoice matches the Excel Sheet View banner exactly (TOTAL ACTUAL + TOTAL OTHER)
             var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
 
-            // Count and sum directly from DB for accuracy (not filtered by excludeToBeDiscussed)
             int totalInvoiceCount = 0;
             decimal totalUsd = 0;
-            using (var cmdSums = conn.CreateCommand())
+            if (invoiceCountsByOwner.TryGetValue(oCode, out var counts))
             {
-                cmdSums.CommandText = @"
-                    SELECT COUNT(*), ISNULL(SUM(ISNULL(total_usd_cost, 0)), 0)
-                    FROM dbo.Profile_invoicing
-                    WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
-                      AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
-                      AND is_processed = 1";
-                cmdSums.Parameters.Add(Param("@grp", oCode));
-                cmdSums.Parameters.Add(Param("@m", cleanMonth));
-                using var sRdr = await cmdSums.ExecuteReaderAsync(ct);
-                if (await sRdr.ReadAsync(ct))
-                {
-                    totalInvoiceCount = Convert.ToInt32(sRdr.GetValue(0));
-                    totalUsd = Convert.ToDecimal(sRdr.GetValue(1));
-                }
+                totalInvoiceCount = counts.Count;
+                totalUsd = counts.TotalCost;
             }
 
             var invoiceCodes = view.Rows
@@ -3595,22 +3775,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 .Distinct()
                 .ToList();
 
-            if (invoiceCodes.Count == 0)
+            if (invoiceCodes.Count == 0 && fallbackCodesByOwner.TryGetValue(oCode, out var fbCodes))
             {
-                using var cmdCodes = conn.CreateCommand();
-                cmdCodes.CommandText = @"
-                    SELECT cmp_prof_invoice_code 
-                    FROM dbo.Profile_invoicing 
-                    WHERE (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
-                      AND (prfgrp_own_code = @grp OR prfown_code = @grp)
-                      AND is_processed = 1";
-                cmdCodes.Parameters.Add(Param("@m", cleanMonth));
-                cmdCodes.Parameters.Add(Param("@grp", oCode));
-                using var cRdr = await cmdCodes.ExecuteReaderAsync(ct);
-                while (await cRdr.ReadAsync(ct))
-                {
-                    invoiceCodes.Add(Convert.ToInt64(cRdr.GetValue(0)));
-                }
+                invoiceCodes = fbCodes;
             }
 
             // Recalculate totalInvoice exactly as the frontend normalizeExcelViewData does:
@@ -3619,7 +3786,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
             decimal normalizedOtherSum = view.Rows
                 .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
                             && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
-                .Sum(r => r.OtherCharge!.Value);            decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
+                .Sum(r => r.OtherCharge!.Value);
+            decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
 
             list.Add(new ProfileInvoiceProcessedProfileDto
             {
@@ -3857,9 +4025,15 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
-        // For owners whose invoices have been generated, sync TotalPendingUsd and TotalCost
-        // with the exact Total Invoice shown on Excel Sheet View (TOTAL ACTUAL + TOTAL OTHER).
-        foreach (var row in result.Rows)
+        // For owners whose invoices have ALREADY been generated into Profile_invoicing,
+        // sync TotalPendingUsd and TotalCost with the exact Total Invoice shown on Excel Sheet View.
+        // We ONLY do this for Generated rows (CompanyRows == 0 && InterviewRows == 0 && RecurringRows == 0)
+        // to avoid expensive and unwanted auto-generation for ungenerated owners.
+        var generatedRows = result.Rows
+            .Where(r => r.CompanyRows == 0 && r.InterviewRows == 0 && r.RecurringRows == 0)
+            .ToList();
+
+        foreach (var row in generatedRows)
         {
             try
             {
