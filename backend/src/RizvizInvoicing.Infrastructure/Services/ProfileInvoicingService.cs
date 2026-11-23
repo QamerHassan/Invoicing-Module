@@ -3720,7 +3720,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
             cmdSums.CommandText = @"
                 SELECT ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS grp_code,
                        COUNT(*),
-                       ISNULL(SUM(ISNULL(pi.total_usd_cost, 0)), 0)
+                       CAST(ISNULL(SUM(ISNULL(pi.total_usd_cost, 0)), 0) AS DECIMAL(18,2))
                 FROM dbo.Profile_invoicing pi
                 WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
                   AND pi.is_processed = 1
@@ -3729,7 +3729,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
             using var sRdr = await cmdSums.ExecuteReaderAsync(ct);
             while (await sRdr.ReadAsync(ct))
             {
-                invoiceCountsByOwner[sRdr.GetInt32(0)] = (sRdr.GetInt32(1), sRdr.GetDecimal(2));
+                int grp = Convert.ToInt32(sRdr.GetValue(0));
+                int count = Convert.ToInt32(sRdr.GetValue(1));
+                decimal cost = Convert.ToDecimal(sRdr.GetValue(2));
+                invoiceCountsByOwner[grp] = (count, cost);
             }
         }
 
@@ -3746,13 +3749,13 @@ public class ProfileInvoicingService : IProfileInvoicingService
             using var cRdr = await cmdCodes.ExecuteReaderAsync(ct);
             while (await cRdr.ReadAsync(ct))
             {
-                int grp = cRdr.GetInt32(0);
+                int grp = Convert.ToInt32(cRdr.GetValue(0));
                 if (!fallbackCodesByOwner.TryGetValue(grp, out var cList))
                 {
                     cList = new List<long>();
                     fallbackCodesByOwner[grp] = cList;
                 }
-                cList.Add(cRdr.GetInt64(1));
+                cList.Add(Convert.ToInt64(cRdr.GetValue(1)));
             }
         }
 
