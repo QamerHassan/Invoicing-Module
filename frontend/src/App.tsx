@@ -81,7 +81,7 @@ const AppContent: React.FC = () => {
   });
   const [dbInfo, setDbInfo] = useState<{ connected: boolean; database?: string; server?: string }>({
     connected: true,
-    database: 'Invoicing_System'
+    database: 'Accounting_System'
   });
 
   // Navigation state: used to deep-link into ProfileInvoicing → Excel → Unprocessed
@@ -224,7 +224,7 @@ const AppContent: React.FC = () => {
             marginLeft: '0.75rem',
             color: dbInfo.connected ? 'var(--accent-emerald)' : 'var(--accent-rose)'
           }}>
-            ● Database {dbInfo.connected ? `Connected (${dbInfo.database || 'Invoicing_System'})` : 'Disconnected'}
+            ● Database {dbInfo.connected ? `Connected (${dbInfo.database || 'Accounting_System'})` : 'Disconnected'}
           </span>
         </div>
         <div className="footer-right-text">

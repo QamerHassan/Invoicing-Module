@@ -34,8 +34,10 @@ import type {
 
 // In production, uses AWS EC2 permanent HTTPS endpoint with Caddy Let's Encrypt SSL
 // In development, falls back to localhost:5290.
+// Explicitly sanitize dead EC2 IP 13.211.80.94 in case it is cached or stored in Vercel env vars
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
 const BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
+  (envBaseUrl && !envBaseUrl.includes('13.211.80.94') ? envBaseUrl : null) ||
   (import.meta.env.DEV ? 'http://localhost:5290' : 'https://32.237.100.27.sslip.io')
 ).replace(/\/$/, '');
 
@@ -537,7 +539,7 @@ export const api = {
     } catch {
       // ignore
     }
-    return { connected: false, database: 'Invoicing_System' };
+    return { connected: false, database: 'Accounting_System' };
   },
 
   // Email Settings (per-user saved sender settings)
