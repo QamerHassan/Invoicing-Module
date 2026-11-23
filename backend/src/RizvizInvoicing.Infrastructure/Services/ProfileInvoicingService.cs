@@ -5049,4 +5049,56 @@ public class ProfileInvoicingService : IProfileInvoicingService
         if (maxLen > 0 && value.Length > maxLen) value = value.Substring(0, maxLen);
         return new(name, value);
     }
+
+    // ── Email tracking ────────────────────────────────────────────────────────
+
+    public async Task MarkInvoicesEmailedAsync(
+        List<long>? codes, int? groupOwnerCode, string? month, string toEmail,
+        string username, CancellationToken ct = default)
+    {
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        string userLog = string.IsNullOrWhiteSpace(username) ? "System"
+            : (username.Length > 20 ? username.Substring(0, 20) : username);
+        string cleanTo = string.IsNullOrWhiteSpace(toEmail) ? ""
+            : (toEmail.Length > 500 ? toEmail.Substring(0, 500) : toEmail.Trim());
+
+        if (codes != null && codes.Count > 0)
+        {
+            var distinctCodes = codes.Distinct().ToList();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                UPDATE dbo.Profile_invoicing
+                SET is_emailed = 1,
+                    emailed_at = SYSUTCDATETIME(),
+                    emailed_to = @to,
+                    last_modified_by = @user,
+                    last_modified_time = GETDATE()
+                WHERE cmp_prof_invoice_code IN ({string.Join(",", distinctCodes)})";
+            cmd.Parameters.Add(Param("@to", cleanTo));
+            cmd.Parameters.Add(Param("@user", userLog));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        else if (groupOwnerCode.HasValue && groupOwnerCode.Value > 0 && !string.IsNullOrWhiteSpace(month))
+        {
+            string cleanMonth = month.Trim().Replace("-", "").ToUpperInvariant();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE dbo.Profile_invoicing
+                SET is_emailed = 1,
+                    emailed_at = SYSUTCDATETIME(),
+                    emailed_to = @to,
+                    last_modified_by = @user,
+                    last_modified_time = GETDATE()
+                WHERE (prfgrp_own_code = @grp OR prfown_code = @grp)
+                  AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)";
+            cmd.Parameters.Add(Param("@to", cleanTo));
+            cmd.Parameters.Add(Param("@user", userLog));
+            cmd.Parameters.Add(Param("@grp", groupOwnerCode.Value));
+            cmd.Parameters.Add(Param("@m", cleanMonth));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
 }

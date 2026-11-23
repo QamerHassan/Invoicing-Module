@@ -440,6 +440,22 @@ public class ProfileInvoicesController : ControllerBase
                 _logger.LogWarning("Email sent but failed to auto-mark as processed: {Message}", procEx.Message);
             }
 
+            // Mark emailed invoices with is_emailed, emailed_at, emailed_to
+            try
+            {
+                await _profileInvoicingService.MarkInvoicesEmailedAsync(
+                    request.SpecificCodes,
+                    request.GroupOwnerCode,
+                    request.Month,
+                    request.ToEmail,
+                    User?.Identity?.Name ?? "Email",
+                    ct);
+            }
+            catch (Exception emailedEx)
+            {
+                _logger.LogWarning("Email sent but failed to mark is_emailed: {Message}", emailedEx.Message);
+            }
+
             return Ok(new { success = true, message = $"Email sent successfully to {request.ToEmail} with attachment {filename}." });
         }
         catch (MailKit.Security.AuthenticationException ex)

@@ -147,4 +147,12 @@ public interface IProfileInvoicingService
     /// then return the Excel view. Safe to call when rows already exist — skips generation.
     /// </summary>
     Task<ProfileInvoiceGenerateOpenResult> GenerateAndOpenAsync(int prfownCode, string month, string username, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mark invoice rows as emailed (is_emailed = 1, emailed_at = now, emailed_to = recipient).
+    /// Updates all rows matching codes or owner+month. Non-fatal if column doesn't exist.
+    /// </summary>
+    Task MarkInvoicesEmailedAsync(
+        List<long>? codes, int? groupOwnerCode, string? month, string toEmail,
+        string username, CancellationToken ct = default);
 }
