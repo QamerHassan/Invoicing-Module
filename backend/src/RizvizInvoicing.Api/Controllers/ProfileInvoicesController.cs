@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using RizvizInvoicing.Application.DTOs;
 using RizvizInvoicing.Application.Interfaces;
+using RizvizInvoicing.Infrastructure.Services;
 
 namespace RizvizInvoicing.Api.Controllers;
 
@@ -455,6 +456,9 @@ public class ProfileInvoicesController : ControllerBase
             {
                 _logger.LogWarning("Email sent but failed to mark is_emailed: {Message}", emailedEx.Message);
             }
+
+            // Invalidate server-side processed profiles cache so next load returns fresh is_emailed data
+            ProfileInvoicingService.InvalidateProcessedProfilesCache();
 
             return Ok(new { success = true, message = $"Email sent successfully to {request.ToEmail} with attachment {filename}." });
         }

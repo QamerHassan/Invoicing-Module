@@ -231,9 +231,9 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
             onClick={() => {
               setEmailComposing(false);
               setEmailOwnerCode('');
-              // Refresh emailed status
-              setEmailedOwners(getEmailedOwnersMap());
-              load();
+              // Force refresh so is_emailed updates immediately
+              processedProfilesCache.delete(cacheKey);
+              load(true);
             }}
             style={{
               display: 'inline-flex',
@@ -262,8 +262,9 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
           onBackToList={() => {
             setEmailComposing(false);
             setEmailOwnerCode('');
-            setEmailedOwners(getEmailedOwnersMap());
-            load();
+            // Force refresh so is_emailed updates immediately
+            processedProfilesCache.delete(cacheKey);
+            load(true);
           }}
           onNavigateToUnprocessed={(targetOwner, targetMonth) => {
             setEmailComposing(false);
