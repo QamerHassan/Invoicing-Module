@@ -42,7 +42,7 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
-    command: sh -c "caddy reverse-proxy --from $${DOMAIN:-13.211.80.94.sslip.io} --to backend:10000"
+    command: sh -c "caddy reverse-proxy --from $${DOMAIN:-32.237.100.27.sslip.io} --to backend:10000"
 
 volumes:
   caddy_data:
