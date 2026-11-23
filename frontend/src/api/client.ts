@@ -36,7 +36,7 @@ import type {
 // In development, falls back to localhost:5290.
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://13.211.80.94.sslip.io')
+  (import.meta.env.DEV ? 'http://localhost:5290' : 'https://32.237.100.27.sslip.io')
 ).replace(/\/$/, '');
 
 function getAuthHeader(): Record<string, string> {
