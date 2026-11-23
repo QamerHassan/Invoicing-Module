@@ -12,6 +12,9 @@ interface Props {
   refreshKey?: number;
 }
 
+// Module-level cache so switching tabs returns instantaneously
+const unprocessedInvoicesCache = new Map<string, ProfileInvoiceUnprocessedResult>();
+
 export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, onSelectOwner, refreshKey }) => {
   const [month, setMonth] = useState(initialMonth || '');
   const [result, setResult] = useState<ProfileInvoiceUnprocessedResult | null>(null);
@@ -26,12 +29,19 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
     }
   }, [initialMonth]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!month) return;
+    const cleanKey = month.trim().replace('-', '').toUpperCase();
+    if (!force && unprocessedInvoicesCache.has(cleanKey)) {
+      setResult(unprocessedInvoicesCache.get(cleanKey)!);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getUnprocessedInvoices(month);
+      const data = await api.getUnprocessedInvoices(month, force);
+      unprocessedInvoicesCache.set(cleanKey, data);
       setResult(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load unprocessed invoices');
@@ -41,7 +51,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
   }, [month]);
 
   useEffect(() => {
-    if (month) load();
+    if (month) load(false);
   }, [load, refreshKey]);
 
   const handleOpen = (prfownCode: number, invoiceMonth: string) => {
@@ -90,7 +100,7 @@ export const ProfileInvoiceUnprocessedTab: React.FC<Props> = ({ initialMonth, on
             }}
           />
           <button
-            onClick={load}
+            onClick={() => load(true)}
             disabled={loading || !month}
             className="btn-secondary"
             style={{ padding: '1px 7px', height: '24px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600 }}

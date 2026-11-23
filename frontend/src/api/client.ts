@@ -511,9 +511,10 @@ export const api = {
     return handleResponse(res);
   },
 
-  async getUnprocessedInvoices(monthYear: string = 'SEP26'): Promise<ProfileInvoiceUnprocessedResult> {
+  async getUnprocessedInvoices(monthYear: string = 'SEP26', forceRefresh: boolean = false): Promise<ProfileInvoiceUnprocessedResult> {
     const encoded = encodeURIComponent(monthYear || 'SEP26');
-    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/unprocessed?month=${encoded}&monthYear=${encoded}&_t=${Date.now()}`, {
+    const forceParam = forceRefresh ? '&force=true' : '';
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/unprocessed?month=${encoded}&monthYear=${encoded}${forceParam}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         ...getAuthHeader(),

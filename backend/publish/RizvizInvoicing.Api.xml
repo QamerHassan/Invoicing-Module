@@ -215,7 +215,7 @@
             Used by Email View warning popup.
             </summary>
         </member>
-        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetUnprocessed(System.String,System.String,System.Threading.CancellationToken)">
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetUnprocessed(System.String,System.String,System.Boolean,System.Threading.CancellationToken)">
             <summary>
             Get unprocessed profile invoices for month (matches PB dw_status_unprocessed).
             Accepts month or monthYear query param; defaults to current month if unspecified.

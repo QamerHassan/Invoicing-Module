@@ -83,7 +83,7 @@ public interface IProfileInvoicingService
     /// <summary>
     /// Get unprocessed profile invoice owners and pending row counts for a month (matching PB dw_status_unprocessed).
     /// </summary>
-    Task<ProfileInvoiceUnprocessedResult> GetUnprocessedInvoicesAsync(string month, CancellationToken ct = default);
+    Task<ProfileInvoiceUnprocessedResult> GetUnprocessedInvoicesAsync(string month, bool forceRefresh = false, CancellationToken ct = default);
 
     /// <summary>
     /// Get change audit log entries from dbo.profile_invoice_audit_log.

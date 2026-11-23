@@ -582,6 +582,7 @@ public class ProfileInvoicesController : ControllerBase
     public async Task<IActionResult> GetUnprocessed(
         [FromQuery] string? month = null,
         [FromQuery] string? monthYear = null,
+        [FromQuery] bool force = false,
         CancellationToken ct = default)
     {
         Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
@@ -592,7 +593,7 @@ public class ProfileInvoicesController : ControllerBase
         if (string.IsNullOrWhiteSpace(selectedMonth))
             selectedMonth = DateTime.UtcNow.ToString("MMMyy").ToUpperInvariant();
 
-        var result = await _profileInvoicingService.GetUnprocessedInvoicesAsync(selectedMonth, ct);
+        var result = await _profileInvoicingService.GetUnprocessedInvoicesAsync(selectedMonth, force, ct);
         return Ok(result);
     }
 

@@ -26,6 +26,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, List<ProfileInvoiceProcessedProfileDto> Data)> _processedProfilesCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, ProfileInvoiceUnprocessedResult Data)> _unprocessedInvoicesCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, bool IsFinalized)> _finalizedMonthsCache = new();
 
     private static DateTime _lookupCacheExpiry = DateTime.MinValue;
@@ -38,6 +39,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
     public static void InvalidateProcessedProfilesCache()
     {
         _processedProfilesCache.Clear();
+        _unprocessedInvoicesCache.Clear();
         _finalizedMonthsCache.Clear();
     }
 
@@ -3912,9 +3914,18 @@ public class ProfileInvoicingService : IProfileInvoicingService
         return (count, usd, ownerName);
     }
 
-    public async Task<ProfileInvoiceUnprocessedResult> GetUnprocessedInvoicesAsync(string month, CancellationToken ct = default)
+    public async Task<ProfileInvoiceUnprocessedResult> GetUnprocessedInvoicesAsync(string month, bool forceRefresh = false, CancellationToken ct = default)
     {
         string cleanMonth = (month ?? "").Trim().Replace("-", "").ToUpperInvariant();
+        string cacheKey = cleanMonth;
+        if (!forceRefresh && _unprocessedInvoicesCache.TryGetValue(cacheKey, out var cachedEntry))
+        {
+            if ((DateTime.UtcNow - cachedEntry.CachedAt).TotalMinutes < 60)
+            {
+                return cachedEntry.Data;
+            }
+        }
+
         var result = new ProfileInvoiceUnprocessedResult
         {
             MonthYear = cleanMonth
@@ -4059,39 +4070,193 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
-        // For owners whose invoices have ALREADY been generated into Profile_invoicing,
-        // sync TotalPendingUsd and TotalCost with the exact Total Invoice shown on Excel Sheet View.
-        // We ONLY do this for Generated rows (CompanyRows == 0 && InterviewRows == 0 && RecurringRows == 0)
-        // to avoid expensive and unwanted auto-generation for ungenerated owners.
+        // Fast batch synchronization for Generated rows:
+        // Load all saved rows and relevant project rates in TWO queries instead of 30 sequential GetExcelViewAsync calls (which took ~57s over network).
         var generatedRows = result.Rows
             .Where(r => r.CompanyRows == 0 && r.InterviewRows == 0 && r.RecurringRows == 0)
             .ToList();
 
-        foreach (var row in generatedRows)
+        if (generatedRows.Count > 0)
         {
             try
             {
-                var view = await GetExcelViewAsync(row.PrfownCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
-                if (view != null && view.Rows.Count > 0)
+                var batchSavedRows = new List<(long Code, int OwnerCode, int? ProjectCode, string ResourceType, bool IsIncluded, decimal? ChargedAmtUsd, decimal? TotalUsdCost, decimal? ActualCharges, decimal? ShareAmount, string? Shortcode)>();
+                using (var cmdBatch = conn.CreateCommand())
                 {
-                    decimal normalizedOtherSum = view.Rows
-                        .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
-                                    && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
-                        .Sum(r => r.OtherCharge!.Value);
-                    decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
+                    cmdBatch.CommandText = @"
+                        SELECT pi.cmp_prof_invoice_code,
+                               ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS owner_code,
+                               pi.project_code,
+                               RTRIM(ISNULL(pi.resource_type, '')) AS resource_type,
+                               CASE WHEN RTRIM(ISNULL(pi.resource_type, '')) IN ('JH', 'SP', 'DR') THEN ISNULL(pi.is_included, 0) ELSE ISNULL(pi.is_included, 1) END AS is_included,
+                               pi.charged_amt_usd,
+                               pi.total_usd_cost,
+                               pi.actual_charges,
+                               pi.share_amount,
+                               pi.shortcode
+                        FROM dbo.Profile_invoicing pi
+                        WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
+                          AND (pi.is_processed = 0 OR pi.is_processed IS NULL)";
+                    cmdBatch.Parameters.Add(Param("@m", cleanMonth));
+                    using var bRdr = await cmdBatch.ExecuteReaderAsync(ct);
+                    while (await bRdr.ReadAsync(ct))
+                    {
+                        batchSavedRows.Add((
+                            Convert.ToInt64(bRdr.GetValue(0)),
+                            Convert.ToInt32(bRdr.GetValue(1)),
+                            bRdr.IsDBNull(2) ? null : bRdr.GetInt32(2),
+                            bRdr.GetString(3),
+                            Convert.ToBoolean(bRdr.GetValue(4)),
+                            bRdr.IsDBNull(5) ? null : bRdr.GetDecimal(5),
+                            bRdr.IsDBNull(6) ? null : Convert.ToDecimal(bRdr.GetValue(6)),
+                            bRdr.IsDBNull(7) ? null : bRdr.GetDecimal(7),
+                            bRdr.IsDBNull(8) ? null : bRdr.GetDecimal(8),
+                            bRdr.IsDBNull(9) ? null : bRdr.GetString(9)
+                        ));
+                    }
+                }
+
+                var batchProjCodes = batchSavedRows
+                    .Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
+                    .Select(r => r.ProjectCode!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var batchProjMap = new Dictionary<int, (decimal Rate, string ProfileType)>();
+                if (batchProjCodes.Count > 0)
+                {
+                    using var cmdP = conn.CreateCommand();
+                    cmdP.CommandText = $@"
+                        SELECT project_code, proj_rate, profile_type
+                        FROM mkt.Projects
+                        WHERE project_code IN ({string.Join(",", batchProjCodes)})";
+                    using var pRdr = await cmdP.ExecuteReaderAsync(ct);
+                    while (await pRdr.ReadAsync(ct))
+                    {
+                        int pCode = pRdr.GetInt32(0);
+                        decimal rate = pRdr.IsDBNull(1) ? 0 : pRdr.GetDecimal(1);
+                        string pType = pRdr.IsDBNull(2) ? "" : pRdr.GetString(2).Trim();
+                        batchProjMap[pCode] = (rate, pType);
+                    }
+                }
+
+                var rowsByOwner = batchSavedRows.GroupBy(r => r.OwnerCode).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var row in generatedRows)
+                {
+                    if (!rowsByOwner.TryGetValue(row.PrfownCode, out var ownerRows) || ownerRows.Count == 0)
+                        continue;
+
+                    decimal sumCost = 0;
+                    decimal sumActual = 0;
+                    decimal sumOther = 0;
+
+                    var byProj = ownerRows.Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0).GroupBy(r => r.ProjectCode!.Value);
+                    var standalone = ownerRows.Where(r => !r.ProjectCode.HasValue || r.ProjectCode.Value == 0);
+
+                    foreach (var pGroup in byProj)
+                    {
+                        int pCode = pGroup.Key;
+                        decimal pRate = 0;
+                        string pType = "";
+                        if (batchProjMap.TryGetValue(pCode, out var pInfo))
+                        {
+                            pRate = pInfo.Rate;
+                            pType = pInfo.ProfileType;
+                        }
+
+                        var jhRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase));
+                        var slRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "SL", StringComparison.OrdinalIgnoreCase));
+
+                        decimal actual = 0;
+                        bool hasJh = jhRow.Code != 0;
+                        bool hasSl = slRow.Code != 0;
+
+                        if (hasJh)
+                        {
+                            actual = jhRow.ActualCharges ?? pRate;
+                        }
+                        else if (hasSl)
+                        {
+                            actual = slRow.ActualCharges ?? pRate;
+                        }
+
+                        if (hasJh || hasSl)
+                        {
+                            sumActual += Math.Round(actual, 0, MidpointRounding.AwayFromZero);
+                        }
+
+                        var jhOrSl = hasJh ? jhRow : slRow;
+                        decimal projShare = 0;
+                        bool isShareInc = false;
+                        if ((hasJh || hasSl) && jhOrSl.ShareAmount.HasValue && jhOrSl.ShareAmount.Value > 0)
+                        {
+                            projShare = Math.Round(jhOrSl.ShareAmount.Value, 0, MidpointRounding.AwayFromZero);
+                            isShareInc = string.Equals(jhOrSl.Shortcode?.Trim(), "1", StringComparison.OrdinalIgnoreCase);
+                        }
+
+                        if (projShare > 0)
+                        {
+                            sumCost += projShare;
+                            if (isShareInc)
+                            {
+                                sumOther += projShare;
+                            }
+                        }
+
+                        foreach (var dRow in pGroup)
+                        {
+                            decimal finalUsd = Math.Round(dRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
+                            sumCost += finalUsd;
+
+                            string resType = dRow.ResourceType.Trim().ToUpperInvariant();
+                            bool isOther = resType != "JH" && resType != "SP";
+                            if (string.Equals(pType, "C", StringComparison.OrdinalIgnoreCase))
+                            {
+                                isOther = false;
+                            }
+
+                            bool isRowOther = (isOther || resType == "JH" || resType == "SP" || resType == "DR") && dRow.IsIncluded;
+                            decimal rowOtherAmt = dRow.ChargedAmtUsd.HasValue
+                                ? Math.Round(Math.Max(0, dRow.ChargedAmtUsd.Value - (dRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
+                                : finalUsd;
+
+                            if (isRowOther && dRow.IsIncluded)
+                            {
+                                sumOther += rowOtherAmt;
+                            }
+                        }
+                    }
+
+                    foreach (var sRow in standalone)
+                    {
+                        decimal finalUsd = Math.Round(sRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
+                        sumCost += finalUsd;
+
+                        decimal standaloneOther = sRow.ChargedAmtUsd.HasValue
+                            ? Math.Round(Math.Max(0, sRow.ChargedAmtUsd.Value - (sRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
+                            : finalUsd;
+
+                        if (sRow.IsIncluded)
+                        {
+                            sumOther += standaloneOther;
+                        }
+                    }
+
+                    decimal normalizedTotalInvoice = sumActual + sumOther;
                     if (normalizedTotalInvoice > 0)
                     {
                         row.TotalPendingUsd = normalizedTotalInvoice;
                     }
-                    if (view.TotalCostSum > 0)
+                    if (sumCost > 0)
                     {
-                        row.TotalCost = view.TotalCostSum;
+                        row.TotalCost = sumCost;
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall back to source table aggregations
+                System.Diagnostics.Debug.WriteLine($"Batch calculation warning: {ex.Message}");
             }
         }
 
@@ -4100,6 +4265,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
         result.TotalPendingUsd = result.Rows.Sum(r => r.TotalPendingUsd);
         result.TotalCostSum = result.Rows.Sum(r => r.TotalCost);
 
+        _unprocessedInvoicesCache[cacheKey] = (DateTime.UtcNow, result);
         return result;
     }
 
