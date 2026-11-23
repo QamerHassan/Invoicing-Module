@@ -864,6 +864,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             await tx.CommitAsync(ct);
 
+            // Invalidate server cache so processed / invoice lists reflect newly saved data immediately
+            InvalidateProcessedProfilesCache();
+
             saveResult.Success       = true;
             saveResult.RowsInserted  = savedRows.Count;
             saveResult.FirstPcomCode = firstPcom;

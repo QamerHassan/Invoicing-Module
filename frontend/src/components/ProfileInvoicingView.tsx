@@ -263,7 +263,7 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
     }
   };
 
-  // 3. Save & Post Invoices
+  // 3. Save & Post Invoices (PowerBuilder Fresh Calculation parity)
   const handleSaveInvoices = async (forceRecalculate = false) => {
     if (!selectedOwnerCode) {
       setError('Please select a Profile Group Owner.');
@@ -274,7 +274,18 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       return;
     }
 
-    if (!forceRecalculate) {
+    // PowerBuilder check: Check if rows already exist in DB for this group owner + month
+    const hasExisting = rows.some(r => r.cmpProfInvoiceCode && r.cmpProfInvoiceCode > 0);
+
+    if (hasExisting && !forceRecalculate) {
+      const deleteFresh = window.confirm(
+        `Fresh Calculation\n\nInvoices already exist for this Profile Group Owner and month.\n\nDo you want to delete the old invoices and save fresh invoices?`
+      );
+      if (!deleteFresh) {
+        return; // User clicked Cancel/No: abort save
+      }
+      forceRecalculate = true;
+    } else if (!forceRecalculate) {
       const confirmed = window.confirm(
         `Are you sure you want to Save & Post ${rows.length} invoice rows for ${formatMonthDisplay(cleanMonth)}?\nOnce posted (status='P'), rows cannot be deleted or re-generated.`
       );
@@ -294,22 +305,25 @@ export const ProfileInvoicingView: React.FC<ProfileInvoicingViewProps> = ({
       });
 
       if (result.success) {
-        setSuccessMsg(`Successfully posted ${result.rowsInserted} invoice row(s) (PCOM: ${result.firstPcomCode} - ${result.lastPcomCode})!`);
+        setSuccessMsg(`Invoices has been Successfully Posted (${result.rowsInserted} row(s), PCOM: ${result.firstPcomCode} - ${result.lastPcomCode})`);
         // Refresh with saved data
         await handleLoadSaved();
-      } else if (result.errorMessage?.includes('already exist')) {
-        // PowerBuilder "Fresh Calculation" popup
+      } else {
+        setError(result.errorMessage || 'Unable to Post');
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('already exist')) {
+        // Backend duplicate guard caught it (e.g. preview rows didn't have cmpProfInvoiceCode on client)
         const deleteFresh = window.confirm(
-          `Invoices already exist for this Profile Group Owner and month.\n\nDo you want to delete the old invoices and save fresh invoices?`
+          `Fresh Calculation\n\nInvoices already exist for this Profile Group Owner and month.\n\nDo you want to delete the old invoices and save fresh invoices?`
         );
         if (deleteFresh) {
           await handleSaveInvoices(true);
+          return;
         }
-      } else {
-        setError(result.errorMessage || 'Failed to save profile invoices.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to post invoices');
+      setError(errMsg || 'Unable to Post');
     } finally {
       setSaving(false);
     }
