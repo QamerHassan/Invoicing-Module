@@ -418,6 +418,9 @@ public class ProfileInvoiceProcessedProfileDto
     public decimal TotalOther { get; set; }
     public int RowsCount { get; set; }
     public List<long> InvoiceCodes { get; set; } = new();
+    public bool IsEmailed { get; set; }
+    public DateTime? EmailedAt { get; set; }
+    public string? EmailedTo { get; set; }
 }
 
 public class ProfileInvoiceProcessByOwnerRequest

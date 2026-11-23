@@ -47,13 +47,19 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   const [emailOwnerCode, setEmailOwnerCode] = useState<number | ''>(initialComposing && initialOwnerCode ? initialOwnerCode : '');
 
   const getEmailedOwnersMap = useCallback((): Record<string, { emailedAt: string; toEmail?: string }> => {
-    try {
-      const raw = localStorage.getItem(`profile_invoice_emailed_${cleanMonth}`);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  }, [cleanMonth]);
+    // Build emailed map from API data (profiles already loaded)
+    // This is kept for backward compatibility with email compose callbacks
+    const map: Record<string, { emailedAt: string; toEmail?: string }> = {};
+    profiles.forEach(p => {
+      if (p.isEmailed) {
+        map[String(p.ownerCode)] = {
+          emailedAt: p.emailedAt || '',
+          toEmail: p.emailedTo || undefined
+        };
+      }
+    });
+    return map;
+  }, [profiles]);
 
   const [emailedOwners, setEmailedOwners] = useState<Record<string, { emailedAt: string; toEmail?: string }>>({});
 
@@ -112,10 +118,10 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
   }, [load]);
 
   const filteredProfiles = useMemo(() => {
-    // Sort: not-emailed owners at TOP, emailed owners at BOTTOM
+    // Sort: not-emailed owners at TOP, emailed owners at BOTTOM (from DB)
     return [...profiles].sort((a, b) => {
-      const aEmailed = Boolean(emailedOwners[String(a.ownerCode)]);
-      const bEmailed = Boolean(emailedOwners[String(b.ownerCode)]);
+      const aEmailed = Boolean(a.isEmailed);
+      const bEmailed = Boolean(b.isEmailed);
       if (aEmailed === bEmailed) return 0;
       return aEmailed ? 1 : -1; // not-emailed (false) → top, emailed (true) → bottom
     });
@@ -447,8 +453,8 @@ export const ProfileInvoiceProcessedTab: React.FC<Props> = ({
               ) : (
                 filteredProfiles.map((p, i) => {
                   const isChecked = selectedOwnerCodes.has(p.ownerCode);
-                  const isEmailed = Boolean(emailedOwners[String(p.ownerCode)]);
-                  const emailInfo = emailedOwners[String(p.ownerCode)];
+                  const isEmailed = Boolean(p.isEmailed);
+                  const emailInfo = p.isEmailed ? { emailedAt: p.emailedAt || '', toEmail: p.emailedTo || undefined } : undefined;
                   return (
                     <tr
                       key={p.ownerCode}

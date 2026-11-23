@@ -3759,6 +3759,31 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        // Fetch per-owner emailed status from database
+        var emailedStatusByOwner = new Dictionary<int, (bool IsEmailed, DateTime? EmailedAt, string? EmailedTo)>();
+        using (var cmdEmailed = conn.CreateCommand())
+        {
+            cmdEmailed.CommandText = @"
+                SELECT ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS grp_code,
+                       MAX(CAST(pi.is_emailed AS INT)) AS is_emailed,
+                       MAX(pi.emailed_at) AS emailed_at,
+                       MAX(pi.emailed_to) AS emailed_to
+                FROM dbo.Profile_invoicing pi
+                WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
+                  AND pi.is_processed = 1
+                GROUP BY ISNULL(pi.prfgrp_own_code, pi.prfown_code)";
+            cmdEmailed.Parameters.Add(Param("@m", cleanMonth));
+            using var eRdr = await cmdEmailed.ExecuteReaderAsync(ct);
+            while (await eRdr.ReadAsync(ct))
+            {
+                int grp = Convert.ToInt32(eRdr.GetValue(0));
+                bool isEmailed = Convert.ToInt32(eRdr.GetValue(1)) == 1;
+                DateTime? emailedAt = eRdr.IsDBNull(2) ? null : eRdr.GetDateTime(2);
+                string? emailedTo = eRdr.IsDBNull(3) ? null : eRdr.GetString(3);
+                emailedStatusByOwner[grp] = (isEmailed, emailedAt, emailedTo);
+            }
+        }
+
         foreach (var oCode in ownerCodes)
         {
             // Use full view (processedOnly=false) so TotalInvoice matches the Excel Sheet View banner exactly (TOTAL ACTUAL + TOTAL OTHER)
@@ -3802,7 +3827,10 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 TotalActual = view.ActualChargesSum,
                 TotalOther = normalizedOtherSum,
                 RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,
-                InvoiceCodes = invoiceCodes
+                InvoiceCodes = invoiceCodes,
+                IsEmailed = emailedStatusByOwner.TryGetValue(oCode, out var es) && es.IsEmailed,
+                EmailedAt = emailedStatusByOwner.TryGetValue(oCode, out var es2) ? es2.EmailedAt : null,
+                EmailedTo = emailedStatusByOwner.TryGetValue(oCode, out var es3) ? es3.EmailedTo : null
             });
         }
 

@@ -376,6 +376,9 @@ export interface ProfileInvoiceProcessedProfileDto {
   totalOther: number;
   rowsCount: number;
   invoiceCodes: number[];
+  isEmailed: boolean;
+  emailedAt?: string | null;
+  emailedTo?: string | null;
 }
 
 export interface ProfileInvoiceProcessedRowDto {
