@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Search, ExternalLink, AlertTriangle, Layers, DollarSign, Wallet, TrendingUp } from 'lucide-react';
+import { RefreshCw, ExternalLink, AlertTriangle, Layers, DollarSign, Wallet, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProfileTotalInvoiceDto, ProfileGroupOwnerDto } from '../types';
 import { formatMoney } from '../utils/format';
 import { LoadingIndicator } from './LoadingIndicator';
+import { OwnerSearchSelect } from './OwnerSearchSelect';
 
 interface Props {
   groupOwners?: ProfileGroupOwnerDto[];
@@ -23,7 +24,6 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
   const [rows, setRows] = useState<ProfileTotalInvoiceDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [openingCode, setOpeningCode] = useState<number | null>(null);
 
   useEffect(() => {
@@ -64,16 +64,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
     setTimeout(() => setOpeningCode(null), 800);
   };
 
-  // Search filter
-  const filteredRows = useMemo(() => {
-    if (!search.trim()) return rows;
-    const query = search.trim().toLowerCase();
-    const words = query.split(/\s+/).filter(Boolean);
-    return rows.filter(r => {
-      const text = `${r.groupOwnerName || ''} ${r.prfgrpOwnCode} ${r.invoiceMonth || ''} ${r.insertBy || ''} ${r.lastModifiedBy || ''} ${r.status || ''}`.toLowerCase();
-      return words.every(w => text.includes(w));
-    });
-  }, [rows, search]);
+  const filteredRows = rows;
 
   // Aggregate KPI summary
   const summary = useMemo(() => {
@@ -281,60 +272,20 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
             />
           </div>
 
-          {/* Group Owner dropdown */}
-          {groupOwners.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Owner:</span>
-              <select
+          {/* Group Owner dropdown + built-in search (matching Processed & Email tab) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Owner:</span>
+            <div style={{ width: '200px' }}>
+              <OwnerSearchSelect
+                owners={groupOwners}
                 value={ownerCode}
-                onChange={e => setOwnerCode(e.target.value ? Number(e.target.value) : '')}
-                style={{
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-subtle)',
-                  background: 'var(--bg-base)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.76rem',
-                  height: '26px',
-                  maxWidth: '180px'
-                }}
-              >
-                <option value="">All Owners</option>
-                {groupOwners.map(o => (
-                  <option key={o.prfOwnCode} value={o.prfOwnCode}>
-                    {o.profileName} (#{o.prfOwnCode})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setOwnerCode(val)}
+                allowAll={true}
+                placeholder="All Owners"
+                emptyMessage="No owners found"
+                compact={true}
+              />
             </div>
-          )}
-
-          {/* Search box */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'var(--bg-base)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '4px',
-            padding: '1px 6px',
-            height: '26px'
-          }}>
-            <Search size={13} style={{ color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Filter by owner or month..."
-              style={{
-                border: 'none',
-                outline: 'none',
-                background: 'transparent',
-                color: 'var(--text-primary)',
-                fontSize: '0.75rem',
-                width: '160px'
-              }}
-            />
           </div>
         </div>
 

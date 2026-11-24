@@ -3789,11 +3789,41 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        // Fast batch lookup of owner names + saved totals from dbo.profile_total_invoices
+        // Eliminates N+1 sequential GetExcelViewAsync calls (40+ owners = 250+ round-trips -> 1 query)
+        var ownerNamesMap = new Dictionary<int, string>();
+        using (var cmdNames = conn.CreateCommand())
+        {
+            cmdNames.CommandText = "SELECT PrfOwn_code, profile_name FROM prof.Profile_Owners";
+            using var nRdr = await cmdNames.ExecuteReaderAsync(ct);
+            while (await nRdr.ReadAsync(ct))
+            {
+                int id = Convert.ToInt32(nRdr.GetValue(0));
+                string name = nRdr.IsDBNull(1) ? $"Owner #{id}" : nRdr.GetString(1).Trim();
+                ownerNamesMap[id] = name;
+            }
+        }
+
+        var savedTotalsMap = new Dictionary<int, (decimal TotalCost, decimal TotalInvoiceAmt)>();
+        using (var cmdTotals = conn.CreateCommand())
+        {
+            cmdTotals.CommandText = @"
+                SELECT prfgrp_own_code, ISNULL(total_cost, 0), ISNULL(total_invoice_amt, 0)
+                FROM dbo.profile_total_invoices
+                WHERE REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m";
+            cmdTotals.Parameters.Add(Param("@m", cleanMonth));
+            using var tRdr = await cmdTotals.ExecuteReaderAsync(ct);
+            while (await tRdr.ReadAsync(ct))
+            {
+                int grp = Convert.ToInt32(tRdr.GetValue(0));
+                decimal cost = Convert.ToDecimal(tRdr.GetValue(1));
+                decimal inv = Convert.ToDecimal(tRdr.GetValue(2));
+                savedTotalsMap[grp] = (cost, inv);
+            }
+        }
+
         foreach (var oCode in ownerCodes)
         {
-            // Use full view (processedOnly=false) so TotalInvoice matches the Excel Sheet View banner exactly (TOTAL ACTUAL + TOTAL OTHER)
-            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
-
             int totalInvoiceCount = 0;
             decimal totalUsd = 0;
             if (invoiceCountsByOwner.TryGetValue(oCode, out var counts))
@@ -3802,20 +3832,43 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 totalUsd = counts.TotalCost;
             }
 
+            if (savedTotalsMap.TryGetValue(oCode, out var savedTotals))
+            {
+                var fbCodes = fallbackCodesByOwner.TryGetValue(oCode, out var cList) ? cList : new List<long>();
+                string ownerName = ownerNamesMap.TryGetValue(oCode, out var nm) ? nm : $"Owner #{oCode}";
+
+                list.Add(new ProfileInvoiceProcessedProfileDto
+                {
+                    OwnerCode = oCode,
+                    OwnerName = ownerName,
+                    Month = cleanMonth,
+                    TotalCost = savedTotals.TotalCost,
+                    TotalInvoice = savedTotals.TotalInvoiceAmt,
+                    TotalActual = savedTotals.TotalInvoiceAmt,
+                    TotalOther = 0,
+                    RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : fbCodes.Count,
+                    InvoiceCodes = fbCodes,
+                    IsEmailed = emailedStatusByOwner.TryGetValue(oCode, out var es) && es.IsEmailed,
+                    EmailedAt = emailedStatusByOwner.TryGetValue(oCode, out var es2) ? es2.EmailedAt : null,
+                    EmailedTo = emailedStatusByOwner.TryGetValue(oCode, out var es3) ? es3.EmailedTo : null
+                });
+                continue;
+            }
+
+            // Fallback only if owner has no saved record in dbo.profile_total_invoices yet
+            var view = await GetExcelViewAsync(oCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
+
             var invoiceCodes = view.Rows
                 .SelectMany(r => (r.ChildInvoiceCodes ?? new List<long>()).Concat(r.CmpProfInvoiceCode.HasValue ? new[] { r.CmpProfInvoiceCode.Value } : Array.Empty<long>()))
                 .Where(c => c > 0)
                 .Distinct()
                 .ToList();
 
-            if (invoiceCodes.Count == 0 && fallbackCodesByOwner.TryGetValue(oCode, out var fbCodes))
+            if (invoiceCodes.Count == 0 && fallbackCodesByOwner.TryGetValue(oCode, out var fbCodes2))
             {
-                invoiceCodes = fbCodes;
+                invoiceCodes = fbCodes2;
             }
 
-            // Recalculate totalInvoice exactly as the frontend normalizeExcelViewData does:
-            // = actualChargesSum + sum of otherCharge for included non-header rows
-            // This ensures Processed tab & Email tab show the SAME value as Excel Sheet View banner.
             decimal normalizedOtherSum = view.Rows
                 .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
                             && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
@@ -3833,9 +3886,9 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 TotalOther = normalizedOtherSum,
                 RowsCount = totalInvoiceCount > 0 ? totalInvoiceCount : invoiceCodes.Count,
                 InvoiceCodes = invoiceCodes,
-                IsEmailed = emailedStatusByOwner.TryGetValue(oCode, out var es) && es.IsEmailed,
-                EmailedAt = emailedStatusByOwner.TryGetValue(oCode, out var es2) ? es2.EmailedAt : null,
-                EmailedTo = emailedStatusByOwner.TryGetValue(oCode, out var es3) ? es3.EmailedTo : null
+                IsEmailed = emailedStatusByOwner.TryGetValue(oCode, out var es4) && es4.IsEmailed,
+                EmailedAt = emailedStatusByOwner.TryGetValue(oCode, out var es5) ? es5.EmailedAt : null,
+                EmailedTo = emailedStatusByOwner.TryGetValue(oCode, out var es6) ? es6.EmailedTo : null
             });
         }
 

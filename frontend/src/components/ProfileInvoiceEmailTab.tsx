@@ -309,6 +309,7 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
       `Dear ${activeOwnerName},\n\n` +
       `Please find attached your ${isSelectedMode ? 'selected' : 'processed'} profile invoice for ${monthFormatted}.\n\n` +
       `Please review the attached Excel workbook for complete line-item breakdown.\n\n` +
+      `Note: Please also attach the invoice proof / screenshot attachment(s) for these invoices and reply to this email.\n\n` +
       `Regards,\n` +
       `Rizviz Invoicing Team`
     );
