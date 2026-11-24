@@ -827,6 +827,44 @@ public class ProfileInvoicesController : ControllerBase
         return Ok(new { success = true, message = result.Message, updatedCount = result.UpdatedCount });
     }
 
+    /// <summary>
+    /// Upsert total invoice amount and total cost into dbo.profile_total_invoices.
+    /// Updates if row exists for prfgrp_own_code + invoice_month; inserts if not.
+    /// </summary>
+    [HttpPost("total-invoices")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpsertTotalInvoice(
+        [FromBody] ProfileTotalInvoiceUpsertRequest request,
+        CancellationToken ct = default)
+    {
+        if (request == null || request.PrfgrpOwnCode <= 0)
+            return BadRequest(new { message = "Valid Profile Group Owner code is required." });
+        if (string.IsNullOrWhiteSpace(request.MonthYear))
+            return BadRequest(new { message = "Month is required." });
+
+        string username = User?.Identity?.Name ?? "System";
+        var result = await _profileInvoicingService.UpsertProfileTotalInvoiceAsync(request, username, ct);
+        if (!result.Success)
+            return BadRequest(new { message = result.Message });
+
+        return Ok(new { success = true, message = result.Message });
+    }
+
+    /// <summary>
+    /// Get saved total invoices per Profile Group Owner from dbo.profile_total_invoices.
+    /// </summary>
+    [HttpGet("total-invoices")]
+    [ProducesResponseType(typeof(List<ProfileTotalInvoiceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTotalInvoices(
+        [FromQuery] string? month = null,
+        [FromQuery] int? prfgrpOwnCode = null,
+        CancellationToken ct = default)
+    {
+        var list = await _profileInvoicingService.GetProfileTotalInvoicesAsync(month, prfgrpOwnCode, ct);
+        return Ok(list);
+    }
+
     private int? GetCurrentUserId()
     {
         var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier);

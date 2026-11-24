@@ -651,6 +651,26 @@ export const api = {
       body: JSON.stringify({ prfownCode, month })
     });
     return handleResponse<ProfileInvoiceGenerateOpenResult>(res);
+  },
+
+  // Profile Total Invoices (dbo.profile_total_invoices persistence)
+  async saveProfileTotalInvoice(req: import('../types').ProfileTotalInvoiceUpsertRequest): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/total-invoices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(req)
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async getProfileTotalInvoices(month?: string, prfgrpOwnCode?: number): Promise<import('../types').ProfileTotalInvoiceDto[]> {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (prfgrpOwnCode) params.append('prfgrpOwnCode', String(prfgrpOwnCode));
+    const res = await fetchWithRetry(`${BASE_URL}/api/profile-invoices/total-invoices?${params}`, {
+      headers: { ...getAuthHeader() }
+    });
+    return handleResponse<import('../types').ProfileTotalInvoiceDto[]>(res);
   }
 };
 

@@ -456,3 +456,33 @@ public class ProfileInvoiceGenerateOpenResult
     public ProfileInvoiceExcelViewResult? ExcelView { get; set; }
 }
 
+public class ProfileTotalInvoiceDto
+{
+    public int CmpProfTotalInvCode { get; set; }
+    public int PrfgrpOwnCode { get; set; }
+    public string GroupOwnerName { get; set; } = string.Empty;
+    public string InvoiceMonth { get; set; } = string.Empty;
+    public int? InvoiceTo { get; set; }
+    public string? Status { get; set; }
+    public string? Remarks { get; set; }
+    public string InsertBy { get; set; } = string.Empty;
+    public DateTime InsertTime { get; set; }
+    public string? LastModifiedBy { get; set; }
+    public DateTime? LastModifiedTime { get; set; }
+    public DateTime? PostedDt { get; set; }
+    public int? Ccy { get; set; }
+    public decimal TotalCost { get; set; }
+    public decimal TotalInvoiceAmt { get; set; }
+    public decimal? ExchangeRate { get; set; }
+}
+
+public class ProfileTotalInvoiceUpsertRequest
+{
+    public int PrfgrpOwnCode { get; set; }
+    public string MonthYear { get; set; } = string.Empty;
+    public decimal TotalCost { get; set; }
+    public decimal TotalInvoiceAmt { get; set; }
+    public string? Remarks { get; set; }
+    public string? Status { get; set; }
+}
+

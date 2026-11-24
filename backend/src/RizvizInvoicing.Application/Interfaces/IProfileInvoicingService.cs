@@ -85,6 +85,10 @@ public interface IProfileInvoicingService
     /// </summary>
     Task<ProfileInvoiceUnprocessedResult> GetUnprocessedInvoicesAsync(string month, bool forceRefresh = false, CancellationToken ct = default);
 
+    Task<(bool Success, string Message)> UpsertProfileTotalInvoiceAsync(ProfileTotalInvoiceUpsertRequest request, string? username, CancellationToken ct = default);
+
+    Task<List<ProfileTotalInvoiceDto>> GetProfileTotalInvoicesAsync(string? month = null, int? prfgrpOwnCode = null, CancellationToken ct = default);
+
     /// <summary>
     /// Get change audit log entries from dbo.profile_invoice_audit_log.
     /// </summary>

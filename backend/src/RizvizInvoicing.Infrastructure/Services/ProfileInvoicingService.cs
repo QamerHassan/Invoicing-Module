@@ -4269,6 +4269,170 @@ public class ProfileInvoicingService : IProfileInvoicingService
         return result;
     }
 
+    public async Task<(bool Success, string Message)> UpsertProfileTotalInvoiceAsync(
+        ProfileTotalInvoiceUpsertRequest request, string? username, CancellationToken ct = default)
+    {
+        if (request == null || request.PrfgrpOwnCode <= 0)
+            return (false, "Invalid Profile Group Owner code.");
+
+        string cleanMonth = (request.MonthYear ?? "").Trim().Replace("-", "").ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(cleanMonth))
+            return (false, "Invoice month is required.");
+
+        string user = !string.IsNullOrWhiteSpace(username) ? username.Trim() : "Admin";
+        if (user.Length > 20) user = user.Substring(0, 20);
+
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF EXISTS (
+                SELECT 1 FROM dbo.profile_total_invoices
+                WHERE prfgrp_own_code = @grp
+                  AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m)
+            )
+            BEGIN
+                UPDATE dbo.profile_total_invoices
+                SET total_cost = @cost,
+                    total_invoice_amt = @inv,
+                    last_modified_by = @user,
+                    last_modified_time = GETDATE(),
+                    status = ISNULL(@status, status),
+                    remarks = ISNULL(@remarks, remarks)
+                WHERE prfgrp_own_code = @grp
+                  AND (REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m);
+            END
+            ELSE
+            BEGIN
+                DECLARE @newCode INT;
+                SELECT @newCode = ISNULL(MAX(cmp_prof_total_inv_code), 0) + 1 FROM dbo.profile_total_invoices;
+
+                INSERT INTO dbo.profile_total_invoices
+                (
+                    cmp_prof_total_inv_code,
+                    prfgrp_own_code,
+                    invoice_month,
+                    invoice_to,
+                    status,
+                    remarks,
+                    insert_by,
+                    insert_time,
+                    last_modified_by,
+                    last_modified_time,
+                    posted_dt,
+                    ccy,
+                    total_cost,
+                    total_invoice_amt,
+                    exchange_rate
+                )
+                VALUES
+                (
+                    @newCode,
+                    @grp,
+                    @m,
+                    1,
+                    ISNULL(@status, 'P'),
+                    @remarks,
+                    @user,
+                    GETDATE(),
+                    @user,
+                    GETDATE(),
+                    GETDATE(),
+                    2, -- USD
+                    @cost,
+                    @inv,
+                    NULL
+                );
+            END";
+
+        cmd.Parameters.Add(Param("@grp", request.PrfgrpOwnCode));
+        cmd.Parameters.Add(Param("@m", cleanMonth));
+        cmd.Parameters.Add(Param("@cost", request.TotalCost));
+        cmd.Parameters.Add(Param("@inv", request.TotalInvoiceAmt));
+        cmd.Parameters.Add(Param("@user", user));
+        cmd.Parameters.Add(Param("@status", (object?)request.Status ?? DBNull.Value));
+        cmd.Parameters.Add(Param("@remarks", (object?)request.Remarks ?? DBNull.Value));
+
+        await cmd.ExecuteNonQueryAsync(ct);
+        return (true, "Profile total invoice successfully saved.");
+    }
+
+    public async Task<List<ProfileTotalInvoiceDto>> GetProfileTotalInvoicesAsync(
+        string? month = null, int? prfgrpOwnCode = null, CancellationToken ct = default)
+    {
+        var list = new List<ProfileTotalInvoiceDto>();
+        string cleanMonth = (month ?? "").Trim().Replace("-", "").ToUpperInvariant();
+
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        using var cmd = conn.CreateCommand();
+        string sql = @"
+            SELECT 
+                pti.cmp_prof_total_inv_code,
+                pti.prfgrp_own_code,
+                ISNULL(po.profile_name, 'Owner #' + CAST(pti.prfgrp_own_code AS VARCHAR(20))) AS group_owner_name,
+                RTRIM(pti.invoice_month) AS invoice_month,
+                pti.invoice_to,
+                pti.status,
+                pti.remarks,
+                pti.insert_by,
+                pti.insert_time,
+                pti.last_modified_by,
+                pti.last_modified_time,
+                pti.posted_dt,
+                pti.ccy,
+                ISNULL(pti.total_cost, 0) AS total_cost,
+                ISNULL(pti.total_invoice_amt, 0) AS total_invoice_amt,
+                pti.exchange_rate
+            FROM dbo.profile_total_invoices pti
+            LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pti.prfgrp_own_code
+            WHERE 1=1";
+
+        if (!string.IsNullOrWhiteSpace(cleanMonth))
+        {
+            sql += " AND (REPLACE(RTRIM(pti.invoice_month), '-', '') = @m OR RTRIM(pti.invoice_month) = @m)";
+            cmd.Parameters.Add(Param("@m", cleanMonth));
+        }
+        if (prfgrpOwnCode.HasValue && prfgrpOwnCode.Value > 0)
+        {
+            sql += " AND pti.prfgrp_own_code = @grp";
+            cmd.Parameters.Add(Param("@grp", prfgrpOwnCode.Value));
+        }
+
+        sql += " ORDER BY pti.cmp_prof_total_inv_code DESC";
+        cmd.CommandText = sql;
+
+        using var rdr = await cmd.ExecuteReaderAsync(ct);
+        while (await rdr.ReadAsync(ct))
+        {
+            list.Add(new ProfileTotalInvoiceDto
+            {
+                CmpProfTotalInvCode = rdr.GetInt32(0),
+                PrfgrpOwnCode = rdr.GetInt32(1),
+                GroupOwnerName = rdr.IsDBNull(2) ? $"Owner #{rdr.GetInt32(1)}" : rdr.GetString(2).Trim(),
+                InvoiceMonth = rdr.IsDBNull(3) ? "" : rdr.GetString(3).Trim(),
+                InvoiceTo = rdr.IsDBNull(4) ? null : rdr.GetInt32(4),
+                Status = rdr.IsDBNull(5) ? null : rdr.GetString(5).Trim(),
+                Remarks = rdr.IsDBNull(6) ? null : rdr.GetString(6).Trim(),
+                InsertBy = rdr.IsDBNull(7) ? "" : rdr.GetString(7).Trim(),
+                InsertTime = rdr.GetDateTime(8),
+                LastModifiedBy = rdr.IsDBNull(9) ? null : rdr.GetString(9).Trim(),
+                LastModifiedTime = rdr.IsDBNull(10) ? null : rdr.GetDateTime(10),
+                PostedDt = rdr.IsDBNull(11) ? null : rdr.GetDateTime(11),
+                Ccy = rdr.IsDBNull(12) ? null : rdr.GetInt32(12),
+                TotalCost = rdr.IsDBNull(13) ? 0 : Convert.ToDecimal(rdr.GetValue(13)),
+                TotalInvoiceAmt = rdr.IsDBNull(14) ? 0 : Convert.ToDecimal(rdr.GetValue(14)),
+                ExchangeRate = rdr.IsDBNull(15) ? null : Convert.ToDecimal(rdr.GetValue(15))
+            });
+        }
+
+        return list;
+    }
+
     public async Task<List<ProfileInvoiceAuditLogDto>> GetAuditLogsAsync(
         string? month = null, int? groupOwnerCode = null, long? cmpProfInvoiceCode = null, CancellationToken ct = default)
     {

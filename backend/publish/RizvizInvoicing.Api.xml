@@ -270,5 +270,16 @@
             Move invoice codes back from Processed to Active (unprocess).
             </summary>
         </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.UpsertTotalInvoice(RizvizInvoicing.Application.DTOs.ProfileTotalInvoiceUpsertRequest,System.Threading.CancellationToken)">
+            <summary>
+            Upsert total invoice amount and total cost into dbo.profile_total_invoices.
+            Updates if row exists for prfgrp_own_code + invoice_month; inserts if not.
+            </summary>
+        </member>
+        <member name="M:RizvizInvoicing.Api.Controllers.ProfileInvoicesController.GetTotalInvoices(System.String,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Get saved total invoices per Profile Group Owner from dbo.profile_total_invoices.
+            </summary>
+        </member>
     </members>
 </doc>

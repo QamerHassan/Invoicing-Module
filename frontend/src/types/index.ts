@@ -491,4 +491,33 @@ export interface ProfileInvoiceGenerateOpenResult {
   excelView?: ProfileInvoiceExcelViewResult | null;
 }
 
+export interface ProfileTotalInvoiceDto {
+  cmpProfTotalInvCode: number;
+  prfgrpOwnCode: number;
+  groupOwnerName: string;
+  invoiceMonth: string;
+  invoiceTo?: number | null;
+  status?: string | null;
+  remarks?: string | null;
+  insertBy: string;
+  insertTime: string;
+  lastModifiedBy?: string | null;
+  lastModifiedTime?: string | null;
+  postedDt?: string | null;
+  ccy?: number | null;
+  totalCost: number;
+  totalInvoiceAmt: number;
+  exchangeRate?: number | null;
+}
+
+export interface ProfileTotalInvoiceUpsertRequest {
+  prfgrpOwnCode: number;
+  monthYear: string;
+  totalCost: number;
+  totalInvoiceAmt: number;
+  remarks?: string | null;
+  status?: string | null;
+}
+
+
 

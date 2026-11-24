@@ -13,7 +13,8 @@ import {
   Archive,
   Users,
   Save,
-  Pencil
+  Pencil,
+  Receipt
 } from 'lucide-react';
 import { api } from '../api/client';
 import { LoadingIndicator } from './LoadingIndicator';
@@ -21,6 +22,7 @@ import { ProfileInvoiceAuditTab } from './ProfileInvoiceAuditTab';
 import { ProfileInvoiceUnprocessedTab } from './ProfileInvoiceUnprocessedTab';
 import { ProfileInvoiceToBeDiscussedTab } from './ProfileInvoiceToBeDiscussedTab';
 import { ProfileInvoiceProcessedTab } from './ProfileInvoiceProcessedTab';
+import { ProfileTotalInvoicesTab } from './ProfileTotalInvoicesTab';
 import { OwnerSearchSelect } from './OwnerSearchSelect';
 import type { 
   ProfileGroupOwnerDto, 
@@ -69,11 +71,11 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
   } | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colKey: string } | null>(null);
   const [hasConfirmedFinalized, setHasConfirmedFinalized] = useState<boolean>(false);
-  type ExcelSubTab = 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed';
+  type ExcelSubTab = 'sheet' | 'audit' | 'unprocessed' | 'discussed' | 'email' | 'processed' | 'total-invoices';
   const [activeExcelTab, setActiveExcelTab] = useState<ExcelSubTab>(() => {
     if (initialExcelTab) return initialExcelTab;
     const saved = localStorage.getItem('profileInvoice_activeExcelTab');
-    if (saved && ['sheet', 'audit', 'unprocessed', 'discussed', 'email', 'processed'].includes(saved)) {
+    if (saved && ['sheet', 'audit', 'unprocessed', 'discussed', 'email', 'processed', 'total-invoices'].includes(saved)) {
       return saved as ExcelSubTab;
     }
     return 'sheet';
@@ -781,6 +783,24 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         await api.updateProfileInvoiceRow(code, req);
       }
 
+      // 4. Save/update Profile Group Owner Total Cost & Total Invoice in dbo.profile_total_invoices
+      try {
+        const ownerCodeNum = Number(selectedOwnerCode);
+        if (ownerCodeNum > 0 && cleanMonth) {
+          const costVal = Number(data.finalUsdSum ?? data.totalCostSum ?? 0);
+          const invVal = Number(data.totalInvoice ?? 0);
+          await api.saveProfileTotalInvoice({
+            prfgrpOwnCode: ownerCodeNum,
+            monthYear: cleanMonth,
+            totalCost: costVal,
+            totalInvoiceAmt: invVal,
+            status: 'P'
+          });
+        }
+      } catch (totalErr: any) {
+        console.warn('Warning: profile_total_invoices save skipped or failed:', totalErr);
+      }
+
       setPendingRowUpdates(new Map());
       setPendingProjectUpdates(new Map());
       setSaveSuccessMsg('All changes saved successfully!');
@@ -1181,6 +1201,25 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
       for (const [rowCode, updateReq] of pendingRowUpdates.entries()) {
         await api.updateProfileInvoiceRow(rowCode, updateReq);
       }
+
+      // Also persist Profile Group Owner Total Cost & Total Invoice in dbo.profile_total_invoices
+      try {
+        const ownerCodeNum = Number(selectedOwnerCode);
+        if (ownerCodeNum > 0 && cleanMonth) {
+          const costVal = Number(data.finalUsdSum ?? data.totalCostSum ?? 0);
+          const invVal = Number(data.totalInvoice ?? 0);
+          await api.saveProfileTotalInvoice({
+            prfgrpOwnCode: ownerCodeNum,
+            monthYear: cleanMonth,
+            totalCost: costVal,
+            totalInvoiceAmt: invVal,
+            status: 'P'
+          });
+        }
+      } catch (totalErr: any) {
+        console.warn('Warning: profile_total_invoices save skipped or failed:', totalErr);
+      }
+
       setPendingProjectUpdates(new Map());
       setPendingRowUpdates(new Map());
       setSaveSuccessMsg('All changes saved successfully!');
@@ -1367,6 +1406,31 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
             <History size={14} style={{ flexShrink: 0 }} />
             <span>Change Summary</span>
           </button>
+
+          <button
+            onClick={() => handleTabChange('total-invoices')}
+            className="compact-tab-btn"
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              fontSize: '0.82rem',
+              fontWeight: activeExcelTab === 'total-invoices' ? 800 : 700,
+              borderRadius: '6px',
+              border: activeExcelTab === 'total-invoices' ? '1.5px solid #3730a3' : '1.5px solid rgba(100, 116, 139, 0.35)',
+              background: activeExcelTab === 'total-invoices' ? 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' : 'var(--bg-surface)',
+              color: activeExcelTab === 'total-invoices' ? '#ffffff' : 'var(--text-main)',
+              boxShadow: activeExcelTab === 'total-invoices' ? '0 2px 6px rgba(79, 70, 229, 0.35)' : '0 1px 2px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <Receipt size={14} style={{ flexShrink: 0 }} />
+            <span>Total Invoices</span>
+          </button>
         </div>
 
         {/* Right Side: Month dropdown + Profile Invoicing button */}
@@ -1381,6 +1445,17 @@ export const ProfileInvoiceExcelView: React.FC<ProfileInvoiceExcelViewProps> = (
         <div style={{ display: activeExcelTab === 'audit' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
           <ProfileInvoiceAuditTab
             groupOwners={postedOwners}
+            initialOwnerCode={selectedOwnerCode}
+            initialMonth={cleanMonth}
+            onViewInExcel={handleViewProcessedInExcel}
+          />
+        </div>
+      )}
+
+      {visitedTabs.has('total-invoices') && (
+        <div style={{ display: activeExcelTab === 'total-invoices' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <ProfileTotalInvoicesTab
+            groupOwners={postedOwners.length > 0 ? postedOwners : _groupOwners}
             initialOwnerCode={selectedOwnerCode}
             initialMonth={cleanMonth}
             onViewInExcel={handleViewProcessedInExcel}
