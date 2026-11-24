@@ -111,8 +111,8 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
       {/* ── KPI Summary Strip ── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: '6px',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '8px',
         flexShrink: 0
       }}>
         {/* KPI 1: Owners Saved */}
@@ -120,28 +120,28 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md, 6px)',
-          padding: '6px 12px',
+          padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px'
         }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
+            width: '34px',
+            height: '34px',
+            borderRadius: '8px',
             background: 'rgba(79, 70, 229, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#4f46e5'
           }}>
-            <Layers size={16} />
+            <Layers size={18} />
           </div>
           <div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Owners Saved
             </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.1 }}>
               {summary.totalOwners}
             </div>
           </div>
@@ -152,28 +152,28 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md, 6px)',
-          padding: '6px 12px',
+          padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px'
         }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
+            width: '34px',
+            height: '34px',
+            borderRadius: '8px',
             background: 'rgba(16, 185, 129, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#10b981'
           }}>
-            <DollarSign size={16} />
+            <DollarSign size={18} />
           </div>
           <div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Total Invoice Amount
             </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#10b981', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#10b981', lineHeight: 1.1 }}>
               {formatMoney(summary.totalInvoiceAmt)}
             </div>
           </div>
@@ -184,28 +184,28 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md, 6px)',
-          padding: '6px 12px',
+          padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px'
         }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
+            width: '34px',
+            height: '34px',
+            borderRadius: '8px',
             background: 'rgba(239, 68, 68, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#ef4444'
           }}>
-            <Wallet size={16} />
+            <Wallet size={18} />
           </div>
           <div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Total Cost
             </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ef4444', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#ef4444', lineHeight: 1.1 }}>
               {formatMoney(summary.totalCostAmt)}
             </div>
           </div>
@@ -216,28 +216,28 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md, 6px)',
-          padding: '6px 12px',
+          padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px'
         }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
+            width: '34px',
+            height: '34px',
+            borderRadius: '8px',
             background: 'rgba(59, 130, 246, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#3b82f6'
           }}>
-            <TrendingUp size={16} />
+            <TrendingUp size={18} />
           </div>
           <div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Net Margin
             </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: summary.netMargin >= 0 ? '#10b981' : '#ef4444', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '1.4rem', fontWeight: 900, color: summary.netMargin >= 0 ? '#10b981' : '#ef4444', lineHeight: 1.1 }}>
               {formatMoney(summary.netMargin)}
             </div>
           </div>
@@ -417,7 +417,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
             </div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', textAlign: 'left' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
             <thead style={{
               position: 'sticky',
               top: 0,
@@ -425,16 +425,16 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
               background: 'var(--bg-surface-elevated, var(--bg-surface))',
               borderBottom: '2px solid var(--border-subtle)'
             }}>
-              <tr style={{ height: '30px', color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                <th style={{ padding: '4px 8px', width: '50px', textAlign: 'center' }}>Code</th>
-                <th style={{ padding: '4px 8px' }}>Profile Group Owner</th>
-                <th style={{ padding: '4px 8px', width: '75px', textAlign: 'center' }}>Month</th>
-                <th style={{ padding: '4px 8px', textAlign: 'right', width: '130px' }}>Total Invoice</th>
-                <th style={{ padding: '4px 8px', textAlign: 'right', width: '130px' }}>Total Cost</th>
-                <th style={{ padding: '4px 8px', textAlign: 'right', width: '130px' }}>Net Margin</th>
-                <th style={{ padding: '4px 8px', width: '60px', textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '4px 8px', width: '130px' }}>Last Modified</th>
-                <th style={{ padding: '4px 8px', width: '90px', textAlign: 'center' }}>Action</th>
+              <tr style={{ height: '34px', color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                <th style={{ padding: '5px 10px', width: '55px', textAlign: 'center' }}>Code</th>
+                <th style={{ padding: '5px 10px' }}>Profile Group Owner</th>
+                <th style={{ padding: '5px 10px', width: '80px', textAlign: 'center' }}>Month</th>
+                <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Total Invoice</th>
+                <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Total Cost</th>
+                <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Net Margin</th>
+                <th style={{ padding: '5px 10px', width: '80px', textAlign: 'center' }}>Status</th>
+                <th style={{ padding: '5px 10px', width: '145px' }}>Last Modified</th>
+                <th style={{ padding: '5px 10px', width: '90px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -447,30 +447,30 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                   <tr
                     key={r.cmpProfTotalInvCode}
                     style={{
-                      height: '32px',
+                      height: '44px',
                       borderBottom: '1px solid var(--border-subtle)',
                       background: isEven ? 'transparent' : 'rgba(0, 0, 0, 0.015)'
                     }}
                   >
                     {/* Code */}
-                    <td style={{ padding: '4px 8px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.76rem', fontWeight: 600 }}>
                       #{r.cmpProfTotalInvCode}
                     </td>
 
                     {/* Profile Group Owner */}
-                    <td style={{ padding: '4px 8px' }}>
+                    <td style={{ padding: '5px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.86rem' }}>
                           {r.groupOwnerName}
                         </span>
                         <span style={{
-                          fontSize: '0.66rem',
-                          padding: '1px 4px',
+                          fontSize: '0.68rem',
+                          padding: '1px 5px',
                           borderRadius: '3px',
                           background: 'rgba(79, 70, 229, 0.08)',
                           color: '#4f46e5',
                           fontFamily: 'var(--font-mono)',
-                          fontWeight: 600
+                          fontWeight: 700
                         }}>
                           #{r.prfgrpOwnCode}
                         </span>
@@ -478,49 +478,51 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                     </td>
 
                     {/* Invoice Month */}
-                    <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'center' }}>
                       <span style={{
                         display: 'inline-block',
-                        padding: '1px 6px',
+                        padding: '2px 8px',
                         borderRadius: '4px',
                         background: 'rgba(59, 130, 246, 0.1)',
                         color: '#2563eb',
                         fontFamily: 'var(--font-mono)',
-                        fontWeight: 700,
-                        fontSize: '0.72rem'
+                        fontWeight: 800,
+                        fontSize: '0.78rem'
                       }}>
                         {r.invoiceMonth}
                       </span>
                     </td>
 
                     {/* Total Invoice */}
-                    <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', letterSpacing: '-0.01em' }}>
                       {formatMoney(r.totalInvoiceAmt)}
                     </td>
 
                     {/* Total Cost */}
-                    <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700, color: '#ef4444', fontFamily: 'var(--font-mono)' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 900, color: '#ef4444', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', letterSpacing: '-0.01em' }}>
                       {formatMoney(r.totalCost)}
                     </td>
 
                     {/* Net Margin */}
                     <td style={{
-                      padding: '4px 8px',
+                      padding: '5px 10px',
                       textAlign: 'right',
-                      fontWeight: 700,
+                      fontWeight: 900,
                       fontFamily: 'var(--font-mono)',
+                      fontSize: '1.05rem',
+                      letterSpacing: '-0.01em',
                       color: margin >= 0 ? '#10b981' : '#ef4444'
                     }}>
                       {formatMoney(margin)}
                     </td>
 
                     {/* Status */}
-                    <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'center' }}>
                       <span style={{
-                        padding: '1px 5px',
-                        borderRadius: '3px',
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
                         background: r.status === 'P' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.12)',
                         color: r.status === 'P' ? '#059669' : 'var(--text-muted)'
                       }}>
@@ -529,25 +531,25 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                     </td>
 
                     {/* Last Modified */}
-                    <td style={{ padding: '4px 8px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      <div>{r.lastModifiedBy || r.insertBy || 'System'}</div>
-                      <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
+                    <td style={{ padding: '5px 10px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      <div style={{ fontWeight: 700 }}>{r.lastModifiedBy || r.insertBy || 'System'}</div>
+                      <div style={{ fontSize: '0.67rem', opacity: 0.8 }}>
                         {formatDate(r.lastModifiedTime || r.insertTime)}
                       </div>
                     </td>
 
                     {/* Action */}
-                    <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                    <td style={{ padding: '5px 10px', textAlign: 'center' }}>
                       <button
                         onClick={() => handleOpenSheet(r.prfgrpOwnCode, r.invoiceMonth)}
                         disabled={isOpening}
                         title="Open Excel Sheet View for this owner"
                         className="compact-btn"
                         style={{
-                          height: '24px',
-                          padding: '0 6px',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
+                          height: '26px',
+                          padding: '0 8px',
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
                           borderRadius: '4px',
                           border: '1px solid rgba(79, 70, 229, 0.3)',
                           background: 'rgba(79, 70, 229, 0.08)',
@@ -555,7 +557,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                           cursor: isOpening ? 'wait' : 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '3px'
+                          gap: '4px'
                         }}
                       >
                         <ExternalLink size={12} />

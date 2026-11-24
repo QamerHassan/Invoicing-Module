@@ -4390,7 +4390,12 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 pti.exchange_rate
             FROM dbo.profile_total_invoices pti
             LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pti.prfgrp_own_code
-            WHERE 1=1";
+            WHERE EXISTS (
+                SELECT 1 FROM dbo.Profile_invoicing pi
+                WHERE (pi.prfgrp_own_code = pti.prfgrp_own_code OR pi.prfown_code = pti.prfgrp_own_code)
+                  AND REPLACE(RTRIM(pi.invoice_month), '-', '') = REPLACE(RTRIM(pti.invoice_month), '-', '')
+                  AND pi.is_processed = 1
+            )";
 
         if (!string.IsNullOrWhiteSpace(cleanMonth))
         {
