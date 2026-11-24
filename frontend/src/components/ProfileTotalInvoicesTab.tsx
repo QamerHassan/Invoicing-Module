@@ -21,7 +21,9 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
 }) => {
   const [month, setMonth] = useState(initialMonth || '');
   const [ownerCode, setOwnerCode] = useState<number | ''>(initialOwnerCode || '');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'P' | 'U'>('all');
   const [rows, setRows] = useState<ProfileTotalInvoiceDto[]>([]);
+  const [unprocessedRows, setUnprocessedRows] = useState<ProfileTotalInvoiceDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openingCode, setOpeningCode] = useState<number | null>(null);
@@ -38,15 +40,37 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
     }
   }, [initialOwnerCode]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
+    const cleanMonth = month ? month.trim().replace('-', '').toUpperCase() : '';
+    const selectedOwner = ownerCode !== '' ? Number(ownerCode) : undefined;
     try {
-      const data = await api.getProfileTotalInvoices(
-        month ? month.trim().replace('-', '').toUpperCase() : undefined,
-        ownerCode !== '' ? Number(ownerCode) : undefined
-      );
-      setRows(data);
+      const [totalData, unprocData] = await Promise.all([
+        api.getProfileTotalInvoices(cleanMonth || undefined, selectedOwner),
+        cleanMonth ? api.getUnprocessedInvoices(cleanMonth, force).catch(() => null) : Promise.resolve(null)
+      ]);
+      setRows(totalData);
+      if (unprocData?.rows) {
+        const mapped: ProfileTotalInvoiceDto[] = unprocData.rows
+          .filter(u => selectedOwner === undefined || u.prfownCode === selectedOwner)
+          .map(u => ({
+            cmpProfTotalInvCode: -u.prfownCode,
+            prfgrpOwnCode: u.prfownCode,
+            groupOwnerName: u.profileName,
+            invoiceMonth: (u.invoiceMonth || cleanMonth).trim(),
+            status: 'U',
+            insertBy: 'Unprocessed',
+            insertTime: '',
+            lastModifiedBy: 'Pending',
+            lastModifiedTime: null,
+            totalCost: u.totalCost || 0,
+            totalInvoiceAmt: u.totalPendingUsd || 0,
+          }));
+        setUnprocessedRows(mapped);
+      } else {
+        setUnprocessedRows([]);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load total invoices');
     } finally {
@@ -55,7 +79,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
   }, [month, ownerCode]);
 
   useEffect(() => {
-    load();
+    load(false);
   }, [load]);
 
   const handleOpenSheet = (code: number, invMonth: string) => {
@@ -64,7 +88,11 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
     setTimeout(() => setOpeningCode(null), 800);
   };
 
-  const filteredRows = rows;
+  const filteredRows = useMemo(() => {
+    if (statusFilter === 'P') return rows;
+    if (statusFilter === 'U') return unprocessedRows;
+    return [...rows, ...unprocessedRows];
+  }, [statusFilter, rows, unprocessedRows]);
 
   // Aggregate KPI summary
   const summary = useMemo(() => {
@@ -287,12 +315,37 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
               />
             </div>
           </div>
+
+          {/* Status filter dropdown (single bold control) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 800 }}>Status:</span>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as 'all' | 'P' | 'U')}
+              style={{
+                padding: '3px 10px',
+                borderRadius: '6px',
+                border: '1.5px solid var(--border-medium, var(--border-subtle))',
+                background: 'var(--bg-base)',
+                color: 'var(--text-primary)',
+                fontSize: '0.84rem',
+                fontWeight: 800,
+                height: '30px',
+                minWidth: '140px',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">All</option>
+              <option value="P">Processed</option>
+              <option value="U">Unprocessed</option>
+            </select>
+          </div>
         </div>
 
         {/* Refresh button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
-            onClick={() => load()}
+            onClick={() => load(true)}
             disabled={loading}
             className="compact-btn"
             style={{
@@ -383,9 +436,8 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                 <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Total Invoice</th>
                 <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Total Cost</th>
                 <th style={{ padding: '5px 10px', textAlign: 'right', width: '155px' }}>Net Margin</th>
-                <th style={{ padding: '5px 10px', width: '80px', textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '5px 10px', width: '145px' }}>Last Modified</th>
-                <th style={{ padding: '5px 10px', width: '90px', textAlign: 'center' }}>Action</th>
+                <th style={{ padding: '5px 10px', width: '70px', textAlign: 'center' }}>Sheet</th>
+                <th style={{ padding: '5px 10px', width: '130px' }}>Last Modified</th>
               </tr>
             </thead>
             <tbody>
@@ -396,7 +448,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
 
                 return (
                   <tr
-                    key={r.cmpProfTotalInvCode}
+                    key={`${r.status === 'U' ? 'U' : 'P'}-${r.cmpProfTotalInvCode}-${r.prfgrpOwnCode}`}
                     style={{
                       height: '44px',
                       borderBottom: '1px solid var(--border-subtle)',
@@ -405,7 +457,7 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                   >
                     {/* Code */}
                     <td style={{ padding: '5px 10px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.76rem', fontWeight: 600 }}>
-                      #{r.cmpProfTotalInvCode}
+                      {r.cmpProfTotalInvCode > 0 ? `#${r.cmpProfTotalInvCode}` : '—'}
                     </td>
 
                     {/* Profile Group Owner */}
@@ -467,40 +519,18 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                       {formatMoney(margin)}
                     </td>
 
-                    {/* Status */}
-                    <td style={{ padding: '5px 10px', textAlign: 'center' }}>
-                      <span style={{
-                        padding: '2px 7px',
-                        borderRadius: '4px',
-                        fontSize: '0.72rem',
-                        fontWeight: 800,
-                        background: r.status === 'P' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.12)',
-                        color: r.status === 'P' ? '#059669' : 'var(--text-muted)'
-                      }}>
-                        {r.status === 'P' ? 'Processed' : r.status || 'Active'}
-                      </span>
-                    </td>
-
-                    {/* Last Modified */}
-                    <td style={{ padding: '5px 10px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      <div style={{ fontWeight: 700 }}>{r.lastModifiedBy || r.insertBy || 'System'}</div>
-                      <div style={{ fontSize: '0.67rem', opacity: 0.8 }}>
-                        {formatDate(r.lastModifiedTime || r.insertTime)}
-                      </div>
-                    </td>
-
-                    {/* Action */}
-                    <td style={{ padding: '5px 10px', textAlign: 'center' }}>
+                    {/* Sheet Action (small, moved before Last Modified) */}
+                    <td style={{ padding: '5px 8px', textAlign: 'center' }}>
                       <button
                         onClick={() => handleOpenSheet(r.prfgrpOwnCode, r.invoiceMonth)}
                         disabled={isOpening}
                         title="Open Excel Sheet View for this owner"
                         className="compact-btn"
                         style={{
-                          height: '26px',
-                          padding: '0 8px',
-                          fontSize: '0.74rem',
-                          fontWeight: 800,
+                          height: '22px',
+                          padding: '0 6px',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
                           borderRadius: '4px',
                           border: '1px solid rgba(79, 70, 229, 0.3)',
                           background: 'rgba(79, 70, 229, 0.08)',
@@ -508,12 +538,48 @@ export const ProfileTotalInvoicesTab: React.FC<Props> = ({
                           cursor: isOpening ? 'wait' : 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px'
+                          gap: '3px'
                         }}
                       >
-                        <ExternalLink size={12} />
+                        <ExternalLink size={10} />
                         <span>Sheet</span>
                       </button>
+                    </td>
+
+                    {/* Last Modified (at end, compact; prominent red pill for Pending) */}
+                    <td style={{ padding: '5px 8px', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      {r.status === 'U' ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '2px 9px',
+                          borderRadius: '9999px',
+                          background: 'rgba(239, 68, 68, 0.14)',
+                          border: '1px solid rgba(239, 68, 68, 0.45)',
+                          color: '#ef4444',
+                          fontSize: '0.70rem',
+                          fontWeight: 800,
+                          letterSpacing: '0.01em'
+                        }}>
+                          <span style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            background: '#ef4444',
+                            display: 'inline-block',
+                            flexShrink: 0
+                          }} />
+                          Pending
+                        </span>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 600 }}>{r.lastModifiedBy || r.insertBy || 'System'}</div>
+                          <div style={{ fontSize: '0.62rem', opacity: 0.75 }}>
+                            {formatDate(r.lastModifiedTime || r.insertTime)}
+                          </div>
+                        </>
+                      )}
                     </td>
                   </tr>
                 );
