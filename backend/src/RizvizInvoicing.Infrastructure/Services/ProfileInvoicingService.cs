@@ -4016,13 +4016,14 @@ public class ProfileInvoicingService : IProfileInvoicingService
             -- ── Source-table rows (company + interview + recurring) ────────────────
             SourceAgg AS (
                 SELECT 
-                    ci.prfown_code,
+                    ISNULL(NULLIF(po.ParentProfile_code, 0), ci.prfown_code) AS prfown_code,
                     ci.invoice_month,
                     1 AS company_row, 0 AS interview_row, 0 AS recurring_row,
                     ISNULL(ci.charged_amt_usd, 0) AS pending_usd,
                     CASE WHEN ISNULL(ci.total_usd_cost, 0) > 0 THEN ci.total_usd_cost 
                          ELSE ISNULL(ci.charged_amt_usd, 0) END AS cost_usd
                 FROM dbo.company_invoicing ci
+                LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = ci.prfown_code
                 WHERE (REPLACE(RTRIM(ci.invoice_month), '-', '') = @m OR RTRIM(ci.invoice_month) = @m)
                   AND (ci.charg_type_code IS NULL OR ci.charg_type_code NOT IN (18, 19, 20, 21, 22, 23, 24, 12, 14, 13))
                   AND ci.prfown_code IS NOT NULL AND ci.prfown_code > 0
@@ -4030,7 +4031,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 UNION ALL
 
                 SELECT 
-                    pii.prfown_code, pii.month_year, 0, 1, 0,
+                    ISNULL(NULLIF(po.ParentProfile_code, 0), pii.prfown_code) AS prfown_code,
+                    pii.month_year, 0, 1, 0,
                     CASE WHEN pii.currency_code = 2 THEN ISNULL(pii.paid_amount, 0)
                          WHEN pii.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pii.paid_amount, 0) / xr.exch_rate, 0)
                          ELSE ISNULL(pii.paid_amount, 0) END,
@@ -4038,6 +4040,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                          WHEN pii.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pii.paid_amount, 0) / xr.exch_rate, 0)
                          ELSE ISNULL(pii.paid_amount, 0) END
                 FROM mkt.profile_int_invoicing pii
+                LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pii.prfown_code
                 CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
                 WHERE (REPLACE(RTRIM(pii.month_year), '-', '') = @m OR RTRIM(pii.month_year) = @m)
                   AND pii.prfown_code IS NOT NULL AND pii.prfown_code > 0
@@ -4045,7 +4048,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 UNION ALL
 
                 SELECT 
-                    pip.Prfown_code, pip.month_year, 0, 0, 1,
+                    ISNULL(NULLIF(po.ParentProfile_code, 0), pip.Prfown_code) AS prfown_code,
+                    pip.month_year, 0, 0, 1,
                     CASE WHEN pip.currency_code = 2 THEN ISNULL(pip.amount, 0)
                          WHEN pip.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pip.amount, 0) / xr.exch_rate, 0)
                          ELSE ISNULL(pip.amount, 0) END,
@@ -4053,6 +4057,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
                          WHEN pip.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pip.amount, 0) / xr.exch_rate, 0)
                          ELSE ISNULL(pip.amount, 0) END
                 FROM mkt.prof_int_proj_invoicing pip
+                LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = pip.Prfown_code
                 CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
                 WHERE (REPLACE(RTRIM(pip.month_year), '-', '') = @m OR RTRIM(pip.month_year) = @m)
                   AND pip.Prfown_code IS NOT NULL AND pip.Prfown_code > 0
@@ -4090,7 +4095,7 @@ public class ProfileInvoicingService : IProfileInvoicingService
 
             UNION ALL
 
-            -- ── PART 2: Not yet generated ──────────────────────────────────────────
+            -- ── PART 2: Not yet generated (Only genuine Profile Group Owners) ──────
             SELECT
                 ng.prfown_code,
                 ISNULL(po.profile_name, 'Unknown (' + CAST(ng.prfown_code AS VARCHAR(20)) + ')') AS profile_name,
@@ -4100,7 +4105,8 @@ public class ProfileInvoicingService : IProfileInvoicingService
                 ng.total_pending_usd,
                 ng.total_cost
             FROM NotGenerated ng
-            LEFT JOIN prof.Profile_Owners po ON po.PrfOwn_code = ng.prfown_code
+            INNER JOIN prof.Profile_Owners po ON po.PrfOwn_code = ng.prfown_code
+                 AND (po.is_profgrp_owner = 'Y' OR po.is_profgrp_owner = 'y')
             ORDER BY profile_name, prfown_code";
         cmd.Parameters.Add(new SqlParameter("@m", cleanMonth));
         using (var reader = await cmd.ExecuteReaderAsync(ct))
