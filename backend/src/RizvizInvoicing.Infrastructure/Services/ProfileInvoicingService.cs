@@ -4123,364 +4123,60 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
-        // Fast batch synchronization for Generated rows:
-        // Load all saved rows and relevant project rates in TWO queries instead of 30 sequential GetExcelViewAsync calls (which took ~57s over network).
-        var generatedRows = result.Rows
-            .Where(r => r.CompanyRows == 0 && r.InterviewRows == 0 && r.RecurringRows == 0)
-            .ToList();
-
-        if (generatedRows.Count > 0)
+        // Exact synchronization matching Processed & Email tab and Excel View:
+        // 1. If an owner has saved totals in dbo.profile_total_invoices, use them directly (identical to Processed Tab line 3807-3855).
+        // 2. Otherwise fallback to GetExcelViewAsync (identical to Processed Tab line 3858-3885).
+        var savedTotalsMap = new Dictionary<int, (decimal TotalCost, decimal TotalInvoiceAmt)>();
+        try
         {
-            try
+            using (var cmdTotals = conn.CreateCommand())
             {
-                var batchSavedRows = new List<(long Code, int OwnerCode, int? ProjectCode, string ResourceType, bool IsIncluded, decimal? ChargedAmtUsd, decimal? TotalUsdCost, decimal? ActualCharges, decimal? ShareAmount, string? Shortcode)>();
-                using (var cmdBatch = conn.CreateCommand())
+                cmdTotals.CommandText = @"
+                    SELECT prfgrp_own_code, ISNULL(total_cost, 0), ISNULL(total_invoice_amt, 0)
+                    FROM dbo.profile_total_invoices
+                    WHERE REPLACE(RTRIM(invoice_month), '-', '') = @m OR RTRIM(invoice_month) = @m";
+                cmdTotals.Parameters.Add(Param("@m", cleanMonth));
+                using var tRdr = await cmdTotals.ExecuteReaderAsync(ct);
+                while (await tRdr.ReadAsync(ct))
                 {
-                    cmdBatch.CommandText = @"
-                        SELECT pi.cmp_prof_invoice_code,
-                               ISNULL(pi.prfgrp_own_code, pi.prfown_code) AS owner_code,
-                               pi.project_code,
-                               RTRIM(ISNULL(pi.resource_type, '')) AS resource_type,
-                               CASE WHEN RTRIM(ISNULL(pi.resource_type, '')) IN ('JH', 'SP', 'DR') THEN ISNULL(pi.is_included, 0) ELSE ISNULL(pi.is_included, 1) END AS is_included,
-                               pi.charged_amt_usd,
-                               pi.total_usd_cost,
-                               pi.actual_charges,
-                               pi.share_amount,
-                               pi.shortcode
-                        FROM dbo.Profile_invoicing pi
-                        WHERE (REPLACE(RTRIM(pi.invoice_month), '-', '') = @m OR RTRIM(pi.invoice_month) = @m)
-                          AND (pi.is_processed = 0 OR pi.is_processed IS NULL)";
-                    cmdBatch.Parameters.Add(Param("@m", cleanMonth));
-                    using var bRdr = await cmdBatch.ExecuteReaderAsync(ct);
-                    while (await bRdr.ReadAsync(ct))
-                    {
-                        batchSavedRows.Add((
-                            Convert.ToInt64(bRdr.GetValue(0)),
-                            Convert.ToInt32(bRdr.GetValue(1)),
-                            bRdr.IsDBNull(2) ? null : bRdr.GetInt32(2),
-                            bRdr.GetString(3),
-                            Convert.ToBoolean(bRdr.GetValue(4)),
-                            bRdr.IsDBNull(5) ? null : bRdr.GetDecimal(5),
-                            bRdr.IsDBNull(6) ? null : Convert.ToDecimal(bRdr.GetValue(6)),
-                            bRdr.IsDBNull(7) ? null : bRdr.GetDecimal(7),
-                            bRdr.IsDBNull(8) ? null : bRdr.GetDecimal(8),
-                            bRdr.IsDBNull(9) ? null : bRdr.GetString(9)
-                        ));
-                    }
+                    int grp = Convert.ToInt32(tRdr.GetValue(0));
+                    decimal cost = Convert.ToDecimal(tRdr.GetValue(1));
+                    decimal inv = Convert.ToDecimal(tRdr.GetValue(2));
+                    savedTotalsMap[grp] = (cost, inv);
                 }
-
-                var batchProjCodes = batchSavedRows
-                    .Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
-                    .Select(r => r.ProjectCode!.Value)
-                    .Distinct()
-                    .ToList();
-
-                var batchProjMap = new Dictionary<int, (decimal Rate, string ProfileType)>();
-                if (batchProjCodes.Count > 0)
-                {
-                    using var cmdP = conn.CreateCommand();
-                    cmdP.CommandText = $@"
-                        SELECT project_code, proj_rate, profile_type
-                        FROM mkt.Projects
-                        WHERE project_code IN ({string.Join(",", batchProjCodes)})";
-                    using var pRdr = await cmdP.ExecuteReaderAsync(ct);
-                    while (await pRdr.ReadAsync(ct))
-                    {
-                        int pCode = pRdr.GetInt32(0);
-                        decimal rate = pRdr.IsDBNull(1) ? 0 : pRdr.GetDecimal(1);
-                        string pType = pRdr.IsDBNull(2) ? "" : pRdr.GetString(2).Trim();
-                        batchProjMap[pCode] = (rate, pType);
-                    }
-                }
-
-                var rowsByOwner = batchSavedRows.GroupBy(r => r.OwnerCode).ToDictionary(g => g.Key, g => g.ToList());
-
-                foreach (var row in generatedRows)
-                {
-                    if (!rowsByOwner.TryGetValue(row.PrfownCode, out var ownerRows) || ownerRows.Count == 0)
-                        continue;
-
-                    decimal sumCost = 0;
-                    decimal sumActual = 0;
-                    decimal sumOther = 0;
-
-                    var byProj = ownerRows.Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0).GroupBy(r => r.ProjectCode!.Value);
-                    var standalone = ownerRows.Where(r => !r.ProjectCode.HasValue || r.ProjectCode.Value == 0);
-
-                    foreach (var pGroup in byProj)
-                    {
-                        int pCode = pGroup.Key;
-                        decimal pRate = 0;
-                        string pType = "";
-                        if (batchProjMap.TryGetValue(pCode, out var pInfo))
-                        {
-                            pRate = pInfo.Rate;
-                            pType = pInfo.ProfileType;
-                        }
-
-                        var jhRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase));
-                        var slRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "SL", StringComparison.OrdinalIgnoreCase));
-
-                        decimal actual = 0;
-                        bool hasJh = jhRow.Code != 0;
-                        bool hasSl = slRow.Code != 0;
-
-                        if (hasJh)
-                        {
-                            actual = jhRow.ActualCharges ?? pRate;
-                        }
-                        else if (hasSl)
-                        {
-                            actual = slRow.ActualCharges ?? pRate;
-                        }
-
-                        if (hasJh || hasSl)
-                        {
-                            sumActual += Math.Round(actual, 0, MidpointRounding.AwayFromZero);
-                        }
-
-                        var jhOrSl = hasJh ? jhRow : slRow;
-                        decimal projShare = 0;
-                        bool isShareInc = false;
-                        if ((hasJh || hasSl) && jhOrSl.ShareAmount.HasValue && jhOrSl.ShareAmount.Value > 0)
-                        {
-                            projShare = Math.Round(jhOrSl.ShareAmount.Value, 0, MidpointRounding.AwayFromZero);
-                            isShareInc = string.Equals(jhOrSl.Shortcode?.Trim(), "1", StringComparison.OrdinalIgnoreCase);
-                        }
-
-                        if (projShare > 0)
-                        {
-                            sumCost += projShare;
-                            if (isShareInc)
-                            {
-                                sumOther += projShare;
-                            }
-                        }
-
-                        foreach (var dRow in pGroup)
-                        {
-                            decimal finalUsd = Math.Round(dRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
-                            sumCost += finalUsd;
-
-                            string resType = dRow.ResourceType.Trim().ToUpperInvariant();
-                            bool isOther = resType != "JH" && resType != "SP";
-                            if (string.Equals(pType, "C", StringComparison.OrdinalIgnoreCase))
-                            {
-                                isOther = false;
-                            }
-
-                            bool isRowOther = (isOther || resType == "JH" || resType == "SP" || resType == "DR") && dRow.IsIncluded;
-                            decimal rowOtherAmt = dRow.ChargedAmtUsd.HasValue
-                                ? Math.Round(Math.Max(0, dRow.ChargedAmtUsd.Value - (dRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
-                                : finalUsd;
-
-                            if (isRowOther && dRow.IsIncluded)
-                            {
-                                sumOther += rowOtherAmt;
-                            }
-                        }
-                    }
-
-                    foreach (var sRow in standalone)
-                    {
-                        decimal finalUsd = Math.Round(sRow.TotalUsdCost ?? 0m, 0, MidpointRounding.AwayFromZero);
-                        sumCost += finalUsd;
-
-                        decimal standaloneOther = sRow.ChargedAmtUsd.HasValue
-                            ? Math.Round(Math.Max(0, sRow.ChargedAmtUsd.Value - (sRow.ShareAmount ?? 0m)), 0, MidpointRounding.AwayFromZero)
-                            : finalUsd;
-
-                        if (sRow.IsIncluded)
-                        {
-                            sumOther += standaloneOther;
-                        }
-                    }
-
-                    decimal normalizedTotalInvoice = sumActual + sumOther;
-                    if (normalizedTotalInvoice > 0)
-                    {
-                        row.TotalPendingUsd = normalizedTotalInvoice;
-                    }
-                    if (sumCost > 0)
-                    {
-                        row.TotalCost = sumCost;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Batch calculation warning: {ex.Message}");
             }
         }
-
-        // Fast batch calculation for NotGenerated rows (owners still only in company_invoicing / interviews / recurring):
-        // Ensures Total Invoice matches Excel Sheet View (Actual = proj_rate + Other) and Total Cost includes ShareAmount.
-        var notGeneratedRows = result.Rows
-            .Where(r => r.CompanyRows > 0 || r.InterviewRows > 0 || r.RecurringRows > 0)
-            .ToList();
-
-        if (notGeneratedRows.Count > 0)
+        catch (Exception ex)
         {
-            try
+            System.Diagnostics.Debug.WriteLine($"Profile total invoices lookup warning: {ex.Message}");
+        }
+
+        foreach (var row in result.Rows)
+        {
+            if (savedTotalsMap.TryGetValue(row.PrfownCode, out var saved) && saved.TotalInvoiceAmt > 0)
             {
-                var ngOwnerCodes = notGeneratedRows.Select(r => r.PrfownCode).Distinct().ToList();
-                var ngOwnerIn = string.Join(",", ngOwnerCodes);
-
-                var ngCompRows = new List<(int OwnerCode, int? ProjectCode, string ResourceType, decimal? ChargedAmtUsd, decimal? TotalUsdCost, decimal? ShareAmount, string? Shortcode)>();
-                using (var cmdNg = conn.CreateCommand())
-                {
-                    cmdNg.CommandText = $@"
-                        SELECT ci.prfown_code,
-                               ci.project_code,
-                               RTRIM(ISNULL(ci.resource_type, '')) AS resource_type,
-                               ci.charged_amt_usd,
-                               ci.total_usd_cost,
-                               ci.share_amount,
-                               ci.shortcode
-                        FROM dbo.company_invoicing ci
-                        WHERE ci.prfown_code IN ({ngOwnerIn})
-                          AND (REPLACE(RTRIM(ci.invoice_month), '-', '') = @m OR RTRIM(ci.invoice_month) = @m)
-                          AND (ci.charg_type_code IS NULL OR ci.charg_type_code NOT IN (18, 19, 20, 21, 22, 23, 24, 12, 14, 13))";
-                    cmdNg.Parameters.Add(Param("@m", cleanMonth));
-                    using var ngRdr = await cmdNg.ExecuteReaderAsync(ct);
-                    while (await ngRdr.ReadAsync(ct))
-                    {
-                        ngCompRows.Add((
-                            Convert.ToInt32(ngRdr.GetValue(0)),
-                            ngRdr.IsDBNull(1) ? null : ngRdr.GetInt32(1),
-                            ngRdr.GetString(2),
-                            ngRdr.IsDBNull(3) ? null : ngRdr.GetDecimal(3),
-                            ngRdr.IsDBNull(4) ? null : Convert.ToDecimal(ngRdr.GetValue(4)),
-                            ngRdr.IsDBNull(5) ? null : ngRdr.GetDecimal(5),
-                            ngRdr.IsDBNull(6) ? null : ngRdr.GetString(6)
-                        ));
-                    }
-                }
-
-                // Also fetch interview & recurring USD totals for these owners so TotalCost is exact
-                var ngExtraCostMap = new Dictionary<int, decimal>();
-                using (var cmdEx = conn.CreateCommand())
-                {
-                    cmdEx.CommandText = $@"
-                        SELECT t.prfown_code, CAST(SUM(t.amt) AS DECIMAL(18,2))
-                        FROM (
-                            SELECT pii.prfown_code,
-                                   CASE WHEN pii.currency_code = 2 THEN ISNULL(pii.paid_amount, 0)
-                                        WHEN pii.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pii.paid_amount, 0) / xr.exch_rate, 0)
-                                        ELSE ISNULL(pii.paid_amount, 0) END AS amt
-                            FROM mkt.profile_int_invoicing pii
-                            CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
-                            WHERE pii.prfown_code IN ({ngOwnerIn})
-                              AND (REPLACE(RTRIM(pii.month_year), '-', '') = @m OR RTRIM(pii.month_year) = @m)
-                            UNION ALL
-                            SELECT pip.Prfown_code,
-                                   CASE WHEN pip.currency_code = 2 THEN ISNULL(pip.amount, 0)
-                                        WHEN pip.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pip.amount, 0) / xr.exch_rate, 0)
-                                        ELSE ISNULL(pip.amount, 0) END AS amt
-                            FROM mkt.prof_int_proj_invoicing pip
-                            CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
-                            WHERE pip.Prfown_code IN ({ngOwnerIn})
-                              AND (REPLACE(RTRIM(pip.month_year), '-', '') = @m OR RTRIM(pip.month_year) = @m)
-                        ) t
-                        GROUP BY t.prfown_code";
-                    cmdEx.Parameters.Add(Param("@m", cleanMonth));
-                    using var exRdr = await cmdEx.ExecuteReaderAsync(ct);
-                    while (await exRdr.ReadAsync(ct))
-                    {
-                        ngExtraCostMap[Convert.ToInt32(exRdr.GetValue(0))] = exRdr.IsDBNull(1) ? 0m : Convert.ToDecimal(exRdr.GetValue(1));
-                    }
-                }
-
-                var ngProjCodes = ngCompRows
-                    .Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
-                    .Select(r => r.ProjectCode!.Value)
-                    .Distinct()
-                    .ToList();
-
-                var ngProjMap = new Dictionary<int, decimal>();
-                if (ngProjCodes.Count > 0)
-                {
-                    using var cmdP = conn.CreateCommand();
-                    cmdP.CommandText = $@"
-                        SELECT project_code, proj_rate
-                        FROM mkt.Projects
-                        WHERE project_code IN ({string.Join(",", ngProjCodes)})";
-                    using var pRdr = await cmdP.ExecuteReaderAsync(ct);
-                    while (await pRdr.ReadAsync(ct))
-                    {
-                        ngProjMap[pRdr.GetInt32(0)] = pRdr.IsDBNull(1) ? 0m : pRdr.GetDecimal(1);
-                    }
-                }
-
-                var ngByOwner = ngCompRows.GroupBy(r => r.OwnerCode).ToDictionary(g => g.Key, g => g.ToList());
-
-                foreach (var row in notGeneratedRows)
-                {
-                    decimal sumCost = ngExtraCostMap.TryGetValue(row.PrfownCode, out var exCost) ? Math.Round(exCost, 0, MidpointRounding.AwayFromZero) : 0m;
-                    decimal sumActual = 0m;
-                    decimal sumOther = 0m;
-
-                    if (ngByOwner.TryGetValue(row.PrfownCode, out var ownerRows) && ownerRows.Count > 0)
-                    {
-                        var byProj = ownerRows.Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0).GroupBy(r => r.ProjectCode!.Value);
-                        var standalone = ownerRows.Where(r => !r.ProjectCode.HasValue || r.ProjectCode.Value == 0);
-
-                        foreach (var pGroup in byProj)
-                        {
-                            decimal pRate = ngProjMap.TryGetValue(pGroup.Key, out var rVal) ? rVal : 0m;
-                            var jhRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase));
-                            var slRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "SL", StringComparison.OrdinalIgnoreCase));
-                            bool hasJh = !string.IsNullOrEmpty(jhRow.ResourceType);
-                            bool hasSl = !string.IsNullOrEmpty(slRow.ResourceType);
-
-                            if ((hasJh || hasSl) && pRate > 0)
-                            {
-                                sumActual += Math.Round(pRate, 0, MidpointRounding.AwayFromZero);
-                            }
-
-                            var jhOrSl = hasJh ? jhRow : slRow;
-                            if ((hasJh || hasSl) && jhOrSl.ShareAmount.HasValue && jhOrSl.ShareAmount.Value > 0)
-                            {
-                                decimal projShare = Math.Round(jhOrSl.ShareAmount.Value, 0, MidpointRounding.AwayFromZero);
-                                sumCost += projShare;
-                                if (string.Equals(jhOrSl.Shortcode?.Trim(), "1", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    sumOther += projShare;
-                                }
-                            }
-
-                            foreach (var dRow in pGroup)
-                            {
-                                decimal rowCost = (dRow.TotalUsdCost.HasValue && dRow.TotalUsdCost.Value > 0)
-                                    ? dRow.TotalUsdCost.Value
-                                    : Math.Max(0m, (dRow.ChargedAmtUsd ?? 0m) - (dRow.ShareAmount ?? 0m));
-                                sumCost += Math.Round(rowCost, 0, MidpointRounding.AwayFromZero);
-                            }
-                        }
-
-                        foreach (var sRow in standalone)
-                        {
-                            decimal rowCost = (sRow.TotalUsdCost.HasValue && sRow.TotalUsdCost.Value > 0)
-                                ? sRow.TotalUsdCost.Value
-                                : (sRow.ChargedAmtUsd ?? 0m);
-                            sumCost += Math.Round(rowCost, 0, MidpointRounding.AwayFromZero);
-                        }
-                    }
-
-                    decimal normalizedTotalInvoice = sumActual + sumOther;
-                    if (normalizedTotalInvoice > 0)
-                    {
-                        row.TotalPendingUsd = normalizedTotalInvoice;
-                    }
-                    if (sumCost > 0)
-                    {
-                        row.TotalCost = sumCost;
-                    }
-                }
+                row.TotalCost = saved.TotalCost;
+                row.TotalPendingUsd = saved.TotalInvoiceAmt;
             }
-            catch (Exception ex)
+            else
             {
-                System.Diagnostics.Debug.WriteLine($"NotGenerated batch calculation warning: {ex.Message}");
+                try
+                {
+                    var view = await GetExcelViewAsync(row.PrfownCode, cleanMonth, processedOnly: false, specificOwnerCode: null, ct: ct);
+                    decimal normalizedOtherSum = view.Rows
+                        .Where(r => r.RowType != "Blank" && r.RowType != "StackHeader" && r.RowType != "ProjectHeader"
+                                    && r.IsIncluded == true && r.OtherCharge.HasValue && r.OtherCharge.Value > 0)
+                        .Sum(r => r.OtherCharge!.Value);
+                    decimal normalizedTotalInvoice = view.ActualChargesSum + normalizedOtherSum;
+
+                    // Always use ExcelView's value — if Excel shows $0, Unprocessed must show $0 too
+                    row.TotalPendingUsd = normalizedTotalInvoice;
+                    row.TotalCost = view.TotalCostSum;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"GetExcelView fallback warning for owner {row.PrfownCode}: {ex.Message}");
+                }
             }
         }
 
