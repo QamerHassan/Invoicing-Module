@@ -188,7 +188,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   const [toEmails, setToEmails] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState<string>('');
 
+  const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState<string>('');
+  const [bccEmails, setBccEmails] = useState<string[]>([]);
   const [bccInput, setBccInput] = useState<string>('');
 
   const toEmail = useMemo(() => {
@@ -203,12 +205,26 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
   }, [toEmails, recipientInput]);
 
   const ccEmail = useMemo(() => {
-    return parseEmailList(ccInput).join(', ');
-  }, [ccInput]);
+    const list = [...ccEmails];
+    if (ccInput.trim()) {
+      const extra = parseEmailList(ccInput);
+      for (const e of extra) {
+        if (!list.includes(e)) list.push(e);
+      }
+    }
+    return list.join(', ');
+  }, [ccEmails, ccInput]);
 
   const bccEmail = useMemo(() => {
-    return parseEmailList(bccInput).join(', ');
-  }, [bccInput]);
+    const list = [...bccEmails];
+    if (bccInput.trim()) {
+      const extra = parseEmailList(bccInput);
+      for (const e of extra) {
+        if (!list.includes(e)) list.push(e);
+      }
+    }
+    return list.join(', ');
+  }, [bccEmails, bccInput]);
 
   const [replyToEmail, setReplyToEmail] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
@@ -295,7 +311,9 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
     const cachedEmail = localStorage.getItem(`profile_invoice_email_recipient_${ownerCode}`) || '';
     setToEmails(parseEmailList(cachedEmail));
     setRecipientInput('');
+    setCcEmails([]);
     setCcInput('');
+    setBccEmails([]);
     setBccInput('');
 
     const isAlreadyEmailed = Boolean(emailedOwners[String(ownerCode)]);
@@ -1498,41 +1516,255 @@ export const ProfileInvoiceEmailTab: React.FC<ProfileInvoiceEmailTabProps> = ({
             )}
           </div>
 
-          {/* Cc (Optional) */}
+          {/* Cc (Optional) - Multi-recipient chips */}
           <div>
             <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
               Cc (Optional)
             </label>
-            <input
-              type="text"
-              value={ccInput}
-              onChange={e => {
-                setCcInput(e.target.value);
-                setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 8px',
+                background: 'var(--bg-surface)',
+                border: fieldErrors.ccEmail ? '1.5px solid #ef4444' : '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                minHeight: '36px',
+                boxSizing: 'border-box',
+                cursor: 'text'
               }}
-              placeholder="e.g. manager@rizviz.com, finance@rizviz.com"
-              style={inputStyle(!!fieldErrors.ccEmail)}
-            />
+              onClick={(e) => {
+                const target = e.currentTarget.querySelector('input');
+                if (target) target.focus();
+              }}
+            >
+              {ccEmails.map((email, idx) => {
+                const isValid = validateEmail(email);
+                return (
+                  <span
+                    key={`cc-${email}-${idx}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: isValid ? 'rgba(99, 102, 241, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                      color: isValid ? 'var(--text-main)' : '#dc2626',
+                      border: `1px solid ${isValid ? 'rgba(99, 102, 241, 0.3)' : 'rgba(239, 68, 68, 0.4)'}`,
+                      padding: '2px 8px',
+                      borderRadius: '16px',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      maxWidth: '100%',
+                      wordBreak: 'break-all'
+                    }}
+                  >
+                    <Mail size={11} color={isValid ? '#6366f1' : '#dc2626'} style={{ flexShrink: 0 }} />
+                    <span>{email}</span>
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setCcEmails(prev => prev.filter((_, i) => i !== idx));
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginLeft: '2px'
+                      }}
+                      title="Remove CC recipient"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+
+              <input
+                type="text"
+                value={ccInput}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val.includes(',') || val.includes(';') || val.includes('\n')) {
+                    const added = parseEmailList(val);
+                    setCcEmails(prev => Array.from(new Set([...prev, ...added])));
+                    setCcInput('');
+                  } else {
+                    setCcInput(val);
+                  }
+                  setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === 'Tab') {
+                    if (ccInput.trim()) {
+                      e.preventDefault();
+                      const added = parseEmailList(ccInput);
+                      setCcEmails(prev => Array.from(new Set([...prev, ...added])));
+                      setCcInput('');
+                      setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
+                    }
+                  } else if (e.key === 'Backspace' && !ccInput && ccEmails.length > 0) {
+                    setCcEmails(prev => prev.slice(0, -1));
+                  }
+                }}
+                onPaste={e => {
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted.includes(',') || pasted.includes(';') || pasted.includes('\n') || pasted.includes(' ')) {
+                    e.preventDefault();
+                    const added = parseEmailList(pasted);
+                    if (added.length > 0) {
+                      setCcEmails(prev => Array.from(new Set([...prev, ...added])));
+                      setCcInput('');
+                      setFieldErrors(prev => ({ ...prev, ccEmail: '' }));
+                    }
+                  }
+                }}
+                placeholder={ccEmails.length === 0 ? "Add CC emails (comma separated, paste, or press Enter)..." : "Add more CC..."}
+                style={{
+                  flex: 1,
+                  minWidth: '180px',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-main)',
+                  fontSize: '0.80rem',
+                  padding: '2px 0'
+                }}
+              />
+            </div>
             {fieldErrors.ccEmail && (
               <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.ccEmail}</span>
             )}
           </div>
 
-          {/* Bcc (Optional) */}
+          {/* Bcc (Optional) - Multi-recipient chips */}
           <div>
             <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
               Bcc (Optional)
             </label>
-            <input
-              type="text"
-              value={bccInput}
-              onChange={e => {
-                setBccInput(e.target.value);
-                setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 8px',
+                background: 'var(--bg-surface)',
+                border: fieldErrors.bccEmail ? '1.5px solid #ef4444' : '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                minHeight: '36px',
+                boxSizing: 'border-box',
+                cursor: 'text'
               }}
-              placeholder="e.g. archive@rizviz.com"
-              style={inputStyle(!!fieldErrors.bccEmail)}
-            />
+              onClick={(e) => {
+                const target = e.currentTarget.querySelector('input');
+                if (target) target.focus();
+              }}
+            >
+              {bccEmails.map((email, idx) => {
+                const isValid = validateEmail(email);
+                return (
+                  <span
+                    key={`bcc-${email}-${idx}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: isValid ? 'rgba(99, 102, 241, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                      color: isValid ? 'var(--text-main)' : '#dc2626',
+                      border: `1px solid ${isValid ? 'rgba(99, 102, 241, 0.3)' : 'rgba(239, 68, 68, 0.4)'}`,
+                      padding: '2px 8px',
+                      borderRadius: '16px',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      maxWidth: '100%',
+                      wordBreak: 'break-all'
+                    }}
+                  >
+                    <Mail size={11} color={isValid ? '#6366f1' : '#dc2626'} style={{ flexShrink: 0 }} />
+                    <span>{email}</span>
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setBccEmails(prev => prev.filter((_, i) => i !== idx));
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginLeft: '2px'
+                      }}
+                      title="Remove BCC recipient"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+
+              <input
+                type="text"
+                value={bccInput}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val.includes(',') || val.includes(';') || val.includes('\n')) {
+                    const added = parseEmailList(val);
+                    setBccEmails(prev => Array.from(new Set([...prev, ...added])));
+                    setBccInput('');
+                  } else {
+                    setBccInput(val);
+                  }
+                  setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === 'Tab') {
+                    if (bccInput.trim()) {
+                      e.preventDefault();
+                      const added = parseEmailList(bccInput);
+                      setBccEmails(prev => Array.from(new Set([...prev, ...added])));
+                      setBccInput('');
+                      setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
+                    }
+                  } else if (e.key === 'Backspace' && !bccInput && bccEmails.length > 0) {
+                    setBccEmails(prev => prev.slice(0, -1));
+                  }
+                }}
+                onPaste={e => {
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted.includes(',') || pasted.includes(';') || pasted.includes('\n') || pasted.includes(' ')) {
+                    e.preventDefault();
+                    const added = parseEmailList(pasted);
+                    if (added.length > 0) {
+                      setBccEmails(prev => Array.from(new Set([...prev, ...added])));
+                      setBccInput('');
+                      setFieldErrors(prev => ({ ...prev, bccEmail: '' }));
+                    }
+                  }
+                }}
+                placeholder={bccEmails.length === 0 ? "Add BCC emails (comma separated, paste, or press Enter)..." : "Add more BCC..."}
+                style={{
+                  flex: 1,
+                  minWidth: '180px',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-main)',
+                  fontSize: '0.80rem',
+                  padding: '2px 0'
+                }}
+              />
+            </div>
             {fieldErrors.bccEmail && (
               <span style={{ fontSize: '0.68rem', color: '#ef4444' }}>{fieldErrors.bccEmail}</span>
             )}

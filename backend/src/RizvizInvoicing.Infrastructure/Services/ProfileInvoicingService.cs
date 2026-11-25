@@ -4313,6 +4313,177 @@ public class ProfileInvoicingService : IProfileInvoicingService
             }
         }
 
+        // Fast batch calculation for NotGenerated rows (owners still only in company_invoicing / interviews / recurring):
+        // Ensures Total Invoice matches Excel Sheet View (Actual = proj_rate + Other) and Total Cost includes ShareAmount.
+        var notGeneratedRows = result.Rows
+            .Where(r => r.CompanyRows > 0 || r.InterviewRows > 0 || r.RecurringRows > 0)
+            .ToList();
+
+        if (notGeneratedRows.Count > 0)
+        {
+            try
+            {
+                var ngOwnerCodes = notGeneratedRows.Select(r => r.PrfownCode).Distinct().ToList();
+                var ngOwnerIn = string.Join(",", ngOwnerCodes);
+
+                var ngCompRows = new List<(int OwnerCode, int? ProjectCode, string ResourceType, decimal? ChargedAmtUsd, decimal? TotalUsdCost, decimal? ShareAmount, string? Shortcode)>();
+                using (var cmdNg = conn.CreateCommand())
+                {
+                    cmdNg.CommandText = $@"
+                        SELECT ci.prfown_code,
+                               ci.project_code,
+                               RTRIM(ISNULL(ci.resource_type, '')) AS resource_type,
+                               ci.charged_amt_usd,
+                               ci.total_usd_cost,
+                               ci.share_amount,
+                               ci.shortcode
+                        FROM dbo.company_invoicing ci
+                        WHERE ci.prfown_code IN ({ngOwnerIn})
+                          AND (REPLACE(RTRIM(ci.invoice_month), '-', '') = @m OR RTRIM(ci.invoice_month) = @m)
+                          AND (ci.charg_type_code IS NULL OR ci.charg_type_code NOT IN (18, 19, 20, 21, 22, 23, 24, 12, 14, 13))";
+                    cmdNg.Parameters.Add(Param("@m", cleanMonth));
+                    using var ngRdr = await cmdNg.ExecuteReaderAsync(ct);
+                    while (await ngRdr.ReadAsync(ct))
+                    {
+                        ngCompRows.Add((
+                            Convert.ToInt32(ngRdr.GetValue(0)),
+                            ngRdr.IsDBNull(1) ? null : ngRdr.GetInt32(1),
+                            ngRdr.GetString(2),
+                            ngRdr.IsDBNull(3) ? null : ngRdr.GetDecimal(3),
+                            ngRdr.IsDBNull(4) ? null : Convert.ToDecimal(ngRdr.GetValue(4)),
+                            ngRdr.IsDBNull(5) ? null : ngRdr.GetDecimal(5),
+                            ngRdr.IsDBNull(6) ? null : ngRdr.GetString(6)
+                        ));
+                    }
+                }
+
+                // Also fetch interview & recurring USD totals for these owners so TotalCost is exact
+                var ngExtraCostMap = new Dictionary<int, decimal>();
+                using (var cmdEx = conn.CreateCommand())
+                {
+                    cmdEx.CommandText = $@"
+                        SELECT t.prfown_code, CAST(SUM(t.amt) AS DECIMAL(18,2))
+                        FROM (
+                            SELECT pii.prfown_code,
+                                   CASE WHEN pii.currency_code = 2 THEN ISNULL(pii.paid_amount, 0)
+                                        WHEN pii.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pii.paid_amount, 0) / xr.exch_rate, 0)
+                                        ELSE ISNULL(pii.paid_amount, 0) END AS amt
+                            FROM mkt.profile_int_invoicing pii
+                            CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
+                            WHERE pii.prfown_code IN ({ngOwnerIn})
+                              AND (REPLACE(RTRIM(pii.month_year), '-', '') = @m OR RTRIM(pii.month_year) = @m)
+                            UNION ALL
+                            SELECT pip.Prfown_code,
+                                   CASE WHEN pip.currency_code = 2 THEN ISNULL(pip.amount, 0)
+                                        WHEN pip.currency_code = 1 AND xr.exch_rate > 0 THEN ROUND(ISNULL(pip.amount, 0) / xr.exch_rate, 0)
+                                        ELSE ISNULL(pip.amount, 0) END AS amt
+                            FROM mkt.prof_int_proj_invoicing pip
+                            CROSS JOIN (SELECT TOP 1 ISNULL(rate, 278.0) AS exch_rate FROM setups.exchange_rate ORDER BY ExchangeRateCode_code ASC) xr
+                            WHERE pip.Prfown_code IN ({ngOwnerIn})
+                              AND (REPLACE(RTRIM(pip.month_year), '-', '') = @m OR RTRIM(pip.month_year) = @m)
+                        ) t
+                        GROUP BY t.prfown_code";
+                    cmdEx.Parameters.Add(Param("@m", cleanMonth));
+                    using var exRdr = await cmdEx.ExecuteReaderAsync(ct);
+                    while (await exRdr.ReadAsync(ct))
+                    {
+                        ngExtraCostMap[Convert.ToInt32(exRdr.GetValue(0))] = exRdr.IsDBNull(1) ? 0m : Convert.ToDecimal(exRdr.GetValue(1));
+                    }
+                }
+
+                var ngProjCodes = ngCompRows
+                    .Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0)
+                    .Select(r => r.ProjectCode!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var ngProjMap = new Dictionary<int, decimal>();
+                if (ngProjCodes.Count > 0)
+                {
+                    using var cmdP = conn.CreateCommand();
+                    cmdP.CommandText = $@"
+                        SELECT project_code, proj_rate
+                        FROM mkt.Projects
+                        WHERE project_code IN ({string.Join(",", ngProjCodes)})";
+                    using var pRdr = await cmdP.ExecuteReaderAsync(ct);
+                    while (await pRdr.ReadAsync(ct))
+                    {
+                        ngProjMap[pRdr.GetInt32(0)] = pRdr.IsDBNull(1) ? 0m : pRdr.GetDecimal(1);
+                    }
+                }
+
+                var ngByOwner = ngCompRows.GroupBy(r => r.OwnerCode).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var row in notGeneratedRows)
+                {
+                    decimal sumCost = ngExtraCostMap.TryGetValue(row.PrfownCode, out var exCost) ? Math.Round(exCost, 0, MidpointRounding.AwayFromZero) : 0m;
+                    decimal sumActual = 0m;
+                    decimal sumOther = 0m;
+
+                    if (ngByOwner.TryGetValue(row.PrfownCode, out var ownerRows) && ownerRows.Count > 0)
+                    {
+                        var byProj = ownerRows.Where(r => r.ProjectCode.HasValue && r.ProjectCode.Value > 0).GroupBy(r => r.ProjectCode!.Value);
+                        var standalone = ownerRows.Where(r => !r.ProjectCode.HasValue || r.ProjectCode.Value == 0);
+
+                        foreach (var pGroup in byProj)
+                        {
+                            decimal pRate = ngProjMap.TryGetValue(pGroup.Key, out var rVal) ? rVal : 0m;
+                            var jhRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "JH", StringComparison.OrdinalIgnoreCase));
+                            var slRow = pGroup.FirstOrDefault(r => string.Equals(r.ResourceType, "SL", StringComparison.OrdinalIgnoreCase));
+                            bool hasJh = !string.IsNullOrEmpty(jhRow.ResourceType);
+                            bool hasSl = !string.IsNullOrEmpty(slRow.ResourceType);
+
+                            if ((hasJh || hasSl) && pRate > 0)
+                            {
+                                sumActual += Math.Round(pRate, 0, MidpointRounding.AwayFromZero);
+                            }
+
+                            var jhOrSl = hasJh ? jhRow : slRow;
+                            if ((hasJh || hasSl) && jhOrSl.ShareAmount.HasValue && jhOrSl.ShareAmount.Value > 0)
+                            {
+                                decimal projShare = Math.Round(jhOrSl.ShareAmount.Value, 0, MidpointRounding.AwayFromZero);
+                                sumCost += projShare;
+                                if (string.Equals(jhOrSl.Shortcode?.Trim(), "1", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    sumOther += projShare;
+                                }
+                            }
+
+                            foreach (var dRow in pGroup)
+                            {
+                                decimal rowCost = (dRow.TotalUsdCost.HasValue && dRow.TotalUsdCost.Value > 0)
+                                    ? dRow.TotalUsdCost.Value
+                                    : Math.Max(0m, (dRow.ChargedAmtUsd ?? 0m) - (dRow.ShareAmount ?? 0m));
+                                sumCost += Math.Round(rowCost, 0, MidpointRounding.AwayFromZero);
+                            }
+                        }
+
+                        foreach (var sRow in standalone)
+                        {
+                            decimal rowCost = (sRow.TotalUsdCost.HasValue && sRow.TotalUsdCost.Value > 0)
+                                ? sRow.TotalUsdCost.Value
+                                : (sRow.ChargedAmtUsd ?? 0m);
+                            sumCost += Math.Round(rowCost, 0, MidpointRounding.AwayFromZero);
+                        }
+                    }
+
+                    decimal normalizedTotalInvoice = sumActual + sumOther;
+                    if (normalizedTotalInvoice > 0)
+                    {
+                        row.TotalPendingUsd = normalizedTotalInvoice;
+                    }
+                    if (sumCost > 0)
+                    {
+                        row.TotalCost = sumCost;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"NotGenerated batch calculation warning: {ex.Message}");
+            }
+        }
+
         result.TotalUnprocessedOwners = result.Rows.Count;
         result.TotalPendingRows = result.Rows.Sum(r => r.PendingRows);
         result.TotalPendingUsd = result.Rows.Sum(r => r.TotalPendingUsd);
